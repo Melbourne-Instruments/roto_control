@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Optional;
 
 import com.bitwig.extension.controller.api.MasterTrack;
+import com.bitwig.extension.controller.api.Send;
 import com.bitwig.extension.controller.api.SendBank;
 import com.bitwig.extension.controller.api.Track;
 import com.bitwig.extension.controller.api.TrackBank;
@@ -198,14 +199,21 @@ public class MasterEfxTrackBank {
         track.arm().addValueObserver(arm -> getSlot(index).ifPresent(slot -> slot.getArm().set(arm)));
         track.solo().addValueObserver(solo -> getSlot(index).ifPresent(slot -> slot.getSolo().set(solo)));
         track.volume().value().addValueObserver(value -> getSlot(index).ifPresent(slot -> slot.getVolume().set(value)));
+        track.volume().displayedValue().addValueObserver(value -> getSlot(index).ifPresent(slot -> slot.getVolume().setDisplayValue(value)));
+        
         track.pan().value().addValueObserver(value -> getSlot(index).ifPresent(slot -> slot.getPan().set(value)));
+        track.pan().displayedValue().addValueObserver(value -> getSlot(index).ifPresent(slot -> slot.getPan().setDisplayValue(value)));
+
         track.name().addValueObserver(name -> getSlot(index).ifPresent(slot -> slot.name.set(name)));
         track.exists().addValueObserver(exists -> getSlot(index).ifPresent(slot -> slot.exists.set(exists)));
         track.color().addValueObserver(
             (r, g, b) -> getSlot(index).ifPresent(slot -> slot.color.set(ColorUtil.toColor(r, g, b))));
         if (index != -1) {
-            track.sendBank().getItemAt(0).value()
+            Send sendItem = track.sendBank().getItemAt(0);
+            sendItem.value()
                 .addValueObserver(value -> getSlot(index).ifPresent(slot -> slot.send.set(value)));
+            sendItem.displayedValue()
+                .addValueObserver(value -> getSlot(index).ifPresent(slot -> slot.send.setDisplayValue(value)));
         }
     }
     

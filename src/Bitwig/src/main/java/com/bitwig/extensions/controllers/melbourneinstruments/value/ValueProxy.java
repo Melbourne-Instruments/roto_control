@@ -11,6 +11,8 @@ public class ValueProxy {
     private boolean touch = false;
     private final List<DoubleConsumer> listeners = new ArrayList<>();
     private final List<Consumer<Boolean>> touchListeners = new ArrayList<>();
+    private final List<Consumer<String>> displayValueListeners = new ArrayList<>();
+    private String displayValue;
     
     public double get() {
         return value;
@@ -23,12 +25,23 @@ public class ValueProxy {
         }
     }
     
+    public void setDisplayValue(String displayValue) {
+        if(this.displayValue != displayValue) {
+            this.displayValue = displayValue;
+            displayValueListeners.stream().forEach(listener -> listener.accept(this.displayValue));
+        }
+    }
+    
     public void addValueObserver(final DoubleConsumer listener) {
         listeners.add(listener);
     }
     
     public void addValueObserver(final Consumer<Boolean> listener) {
         touchListeners.add(listener);
+    }
+    
+    public void addDisplayValueObserver(final Consumer<String> listener) {
+        displayValueListeners.add(listener);
     }
     
     public void touched(final boolean touched) {

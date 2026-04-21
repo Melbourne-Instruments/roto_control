@@ -82,13 +82,8 @@ public class RotoParameter {
         return "F0 00 22 03 02 0B 0F %02X %02X %s %sF7".formatted(0, index + 1, sysExHash, getDisplayName());
     }
 
-    public String getSysExName(final String value) {
-        return "F0 00 22 03 02 0B 0F %02X %02X %s %sF7".formatted(
-            0, index + 1, sysExHash, StringUtil.nameToSysEx(value));
-    }
-
     public String getSysExValueString(final String value) {
-        return "F0 00 22 03 02 0A 0F %02X %02X %sF7".formatted(0, index, StringUtil.nameToSysEx(value));
+        return "F0 00 22 03 02 0A 18 %02X %02X %sF7".formatted(0, index, StringUtil.nameToSysEx(value));
     }
 
     public String getLearnSysEx() {

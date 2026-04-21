@@ -410,14 +410,15 @@ public class MainLayerHandler {
     }
     
     public void navigatePluginBank(final int firstIndex) {
-        //RotoControlExtension.println("NAV PI B = %d", firstIndex);
         pluginModeHandler.navigatePluginBank(firstIndex);
     }
     
     public void activateParameter(final ParameterSettings setting) {
         pluginModeHandler.activateParameter(setting).ifPresent(this::handleParamUpdate);
+        if(setting.index() == 8) {
+            midiProcessor.unBlockCc();
+        }
     }
-    
     
     private void handleParamUpdate(final RotoParameter param) {
         if (!inPluginMode) {
@@ -508,7 +509,9 @@ public class MainLayerHandler {
     
     private void sendUpdateFocusTrack(final boolean force) {
         if (selectedTrackIndex >= 0 && (force || selectedTrackIndex != lastSentTrackIndex)) {
-            midiProcessor.sendSysEx(cursorTrackState.toSysExUpdateSel(selectedTrackIndex));
+            if(cursorTrackState.getName() != null) {
+                midiProcessor.sendSysEx(cursorTrackState.toSysExUpdateSel(selectedTrackIndex));
+            }
             lastSentTrackIndex = selectedTrackIndex;
         }
     }
@@ -617,7 +620,7 @@ public class MainLayerHandler {
     }
     
     public void selectPlugin(final int index) {
-        //RotoControlExtension.println(" SEL PI = %d", index);
+        //RotoControlExtension.println(" SEL PI = %d %s", index, inPluginMode);
         pluginModeHandler.selectPlugin(index);
         pendingDeviceChange = DeviceParameterUpdateState.CHANGE_INVOKED;
     }

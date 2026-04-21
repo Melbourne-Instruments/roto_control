@@ -39,6 +39,7 @@ public class PluginModeHandler implements ScrollViewSet {
     private int pluginPosition;
     private int numberOfPlugins;
     private int firstPlugin;
+    private boolean paramUpdate = false;
 
     private final BooleanValueObject inMacroMode = new BooleanValueObject();
     private boolean lockedState = false;
@@ -49,14 +50,14 @@ public class PluginModeHandler implements ScrollViewSet {
     private final LearnProcessor learnProcessor;
     private final DirectParameterValueDisplayObserver paramValueObserver;
     private final MacroDevice macroDevice;
-    private final MacroDevice trackDevice;
+    //private final MacroDevice trackDevice;
 
     public PluginModeHandler(final MainLayerHandler mainHandler, final MidiProcessor midiProcessor,
         final RotoViewControl viewControl) {
         this.mainHandler = mainHandler;
         this.cursorDevice = viewControl.getCursorDevice();
         this.macroDevice = new MacroDevice(viewControl.getDeviceRemotes());
-        this.trackDevice = new MacroDevice(viewControl.getTrackRemotes());
+        //this.trackDevice = new MacroDevice(viewControl.getTrackRemotes());
         this.midiProcessor = midiProcessor;
         deviceBank = viewControl.getDeviceBank();
         this.learnProcessor = new LearnProcessor(midiProcessor, cursorDevice);
@@ -217,9 +218,11 @@ public class PluginModeHandler implements ScrollViewSet {
             this.pluginPosition = pos;
             deviceBank.scrollPosition().set(this.firstPlugin);
             mainHandler.markUpdateRequired(FocusSource.PLUGIN);
+            midiProcessor.blockCCIns();
         } else {
             this.pluginPosition = pos;
             mainHandler.markUpdateRequired(FocusSource.PLUGIN);
+            midiProcessor.blockCCIns();
         }
     }
 
@@ -227,7 +230,8 @@ public class PluginModeHandler implements ScrollViewSet {
         if (lockedState) {
             cursorDevice.isPinned().set(false);
         }
-        cursorDevice.selectDevice(deviceBank.getItemAt(index));
+        Device selectedDevice = deviceBank.getItemAt(index);
+         cursorDevice.selectDevice(selectedDevice);
         if (lockedState) {
             cursorDevice.isPinned().set(true);
         }

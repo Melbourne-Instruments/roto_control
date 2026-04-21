@@ -27,7 +27,7 @@
       <dependency>
          <groupId>com.bitwig</groupId>
          <artifactId>extension-api</artifactId>
-         <version>DEV</version>
+         <version>25</version>
       </dependency>
 
       <dependency>
@@ -75,7 +75,7 @@
                      <sourceFile>${project.build.directory}/${project.build.finalName}.jar
                      </sourceFile>
                      <!-- ${bitwig.extension.directory} -->
-                     <destinationFile>${project.build.directory}/Roto-Control_v2.bwextension
+                     <destinationFile>${bitwig.extension.directory}/Roto-Control_v3.bwextension
                      </destinationFile>
                   </configuration>
                </execution>

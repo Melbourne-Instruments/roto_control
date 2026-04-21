@@ -5,6 +5,7 @@ import java.util.Arrays;
 import com.bitwig.extension.controller.api.ControllerHost;
 import com.bitwig.extension.controller.api.CursorRemoteControlsPage;
 import com.bitwig.extension.controller.api.CursorTrack;
+import com.bitwig.extension.controller.api.Device;
 import com.bitwig.extension.controller.api.DeviceBank;
 import com.bitwig.extension.controller.api.MasterTrack;
 import com.bitwig.extension.controller.api.PinnableCursorDevice;
@@ -26,14 +27,12 @@ public class RotoViewControl {
     private final TrackBank effectBank;
     private final MasterTrack masterTrack;
     private final CursorRemoteControlsPage deviceRemotes;
-    private final CursorRemoteControlsPage trackRemotes;
+    //private final CursorRemoteControlsPage trackRemotes;
     
     private String[] origPageNames = new String[0];
     private String[] devicePageNames = new String[0];
     private int origPageIndex = 0;
     private int devicePageIndex = 0;
-    private final CursorRemoteControlsPage origRemotes;
-    private final CursorRemoteControlsPage projectRemotes;
     private final BasicIntegerValue cursorIndex = new BasicIntegerValue();
     private final BooleanValueObject touchAutomationActive = new BooleanValueObject();
     
@@ -46,18 +45,18 @@ public class RotoViewControl {
         
         //trackBank.followCursorTrack(cursorTrack);
         cursorDevice = cursorTrack.createCursorDevice();
-        //deviceBank = cursorTrack.createDeviceBank(8);
+        //cursorDevice.setCanPointAtTrackControlsDevice(true);
         deviceBank = cursorDevice.deviceChain().createDeviceBank(8);
-        deviceRemotes = cursorDevice.createCursorRemoteControlsPage("DEVICE", 8, null);
-        origRemotes = cursorDevice.createCursorRemoteControlsPage(8);
+        //deviceBank.setShouldIncludeTrackControlsDevices(true);
+        
+        //deviceRemotes = cursorDevice.createCursorRemoteControlsPage("DEVICE", 8, null);
+        deviceRemotes = cursorDevice.createCursorRemoteControlsPage(8);
         
         deviceRemotes.selectedPageIndex().addValueObserver(this::handleDevicePageIndex);
-        origRemotes.selectedPageIndex().addValueObserver(this::handleOrigDevicePageIndex);
         deviceRemotes.pageNames().addValueObserver(names -> this.devicePageNames = names);
-        origRemotes.pageNames().addValueObserver(names -> this.origPageNames = names);
         
-        trackRemotes = cursorTrack.createCursorRemoteControlsPage(8);
-        projectRemotes = rootTrack.createCursorRemoteControlsPage(8);
+        //trackRemotes = cursorTrack.createCursorRemoteControlsPage(8);
+        //projectRemotes = rootTrack.createCursorRemoteControlsPage(8);
         
         final TrackBank overviewTrackBank = host.createTrackBank(8, 0, 0);
         overviewTrackBank.setShouldShowClipLauncherFeedback(false);
@@ -105,7 +104,7 @@ public class RotoViewControl {
         }
         this.devicePageIndex = index;
         if (Arrays.equals(origPageNames, devicePageNames) && index != this.origPageIndex) {
-            this.origRemotes.selectedPageIndex().set(index);
+            this.deviceRemotes.selectedPageIndex().set(index);
         }
     }
     
@@ -155,7 +154,4 @@ public class RotoViewControl {
         return deviceRemotes;
     }
     
-    public CursorRemoteControlsPage getTrackRemotes() {
-        return trackRemotes;
-    }
-}
+ }

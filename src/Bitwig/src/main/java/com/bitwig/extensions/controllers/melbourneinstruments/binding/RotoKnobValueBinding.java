@@ -1,5 +1,6 @@
 package com.bitwig.extensions.controllers.melbourneinstruments.binding;
 
+import com.bitwig.extensions.controllers.melbourneinstruments.RotoControlExtension;
 import com.bitwig.extensions.controllers.melbourneinstruments.control.RotoKnob;
 import com.bitwig.extensions.controllers.melbourneinstruments.value.ValueProxy;
 import com.bitwig.extensions.framework.Binding;
@@ -9,14 +10,21 @@ public class RotoKnobValueBinding extends Binding<RotoKnob, ValueProxy> {
     private int lowValue;
     private int highValue;
     private long knobChangeTime;
-    private boolean exists;
     
     public RotoKnobValueBinding(final RotoKnob knob, final ValueProxy parameter) {
         super(knob, knob, parameter);
         knob.getKnobValue().addValueObserver(this::handleKnobValueChanged);
         parameter.addValueObserver(this::handleParameterValueChanged);
+        parameter.addDisplayValueObserver(this::handleDisplayValueChanged);
+        
         updateValues(parameter.get());
         knob.getTouchButton().isPressed().addValueObserver(this::handleTouched);
+    }
+    
+    private void handleDisplayValueChanged(String displayValue) {
+        if(isActive()) {
+            RotoControlExtension.println(" UPDATE VALUE "  + displayValue);
+        }
     }
     
     private void handleTouched(final boolean touched) {

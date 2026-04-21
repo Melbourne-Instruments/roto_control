@@ -45,6 +45,8 @@ public class MidiProcessor {
     private final MidiOut midiOut;
     private MainLayerHandler mixState;
     private boolean ccOutBlocked = false;
+    private boolean ccInsBlocked = false;
+    private long inBlockTime = 0L;
     private boolean initialized = false;
     
     private final Map<Integer, RotoKnob> valueMatcherMap = new HashMap<>();
@@ -135,6 +137,10 @@ public class MidiProcessor {
         if (!pendingCCs.isEmpty() && !ccOutBlocked) {
             flushPendingCCs();
         }
+        if(ccInsBlocked && (System.currentTimeMillis()-inBlockTime) > 1000) {
+            RotoControlExtension.println(" Free Blockage");
+            unBlockCc();
+        }
         resetCalls.forEach(DisplayResetState::process);
         host.scheduleTask(this::processMidi, 30);
     }
@@ -146,7 +152,6 @@ public class MidiProcessor {
             sendCCHiResNow(ccNr, values[0], values[1]);
         }
     }
-    
     
     public ControllerHost getHost() {
         return host;
@@ -171,10 +176,10 @@ public class MidiProcessor {
     }
     
     private void handleRotoUpdate(final int command, final int commandNum, final String data) {
-        //RotoControlExtension.println("INCOMING = %s  => %02X // %02X    ", data, command, commandNum);
-        //        if (command != CMD_ID_PLUGIN && commandNum != 0xB) {
-        //            RotoControlExtension.println("Sys Ex = %s  => %s // %s", data, command, commandNum);
-        //        }
+//        RotoControlExtension.println("INCOMING = %s  => %02X // %02X    ", data, command, commandNum);
+//        if (command != CMD_ID_PLUGIN && commandNum != 0xB) {
+//            RotoControlExtension.println("Sys Ex = %s  => %s // %s", data, command, commandNum);
+//        }
         if (command == CMD_ID_GENERAL) {
             switch (commandNum) {
                 case 0x6 -> mixState.setTrackOffset(getSysExIntValue(4, data));
@@ -245,6 +250,10 @@ public class MidiProcessor {
     
     private void handleMidiIn(final int status, final int data1, final int data2) {
         if (status == 0xBF) {
+            if(ccInsBlocked) {
+                //RotoControlExtension.println(" DEFLECT ");
+                return;
+            }
             RotoKnob knob = valueMatcherMap.get(data1);
             if (knob != null) {
                 knob.setHighByteValue(data2);
@@ -359,5 +368,17 @@ public class MidiProcessor {
     
     public void notifyDisplayCall(final int index, final Runnable resetCallback) {
         resetCalls.get(index).set(resetCallback);
+    }
+    
+    public void blockCCIns() {
+        //RotoControlExtension.println("## BLOCK CC");
+        this.ccInsBlocked = true;
+        inBlockTime = System.currentTimeMillis();
+    }
+    
+    public void unBlockCc() {
+        //RotoControlExtension.println("** UN-BLOCK CC");
+        this.ccInsBlocked = false;
+        inBlockTime = -1L;
     }
 }

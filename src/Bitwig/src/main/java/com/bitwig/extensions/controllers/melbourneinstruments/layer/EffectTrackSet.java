@@ -15,9 +15,7 @@ public class EffectTrackSet implements ScrollViewSet {
 
     private int sendSection = 0;
     private final SendBank effectBank;
-
     private int scrollPosition = 0;
-
 
     private static final String EMPTY_SYSEX_NAME = StringUtil.toSysExName("");
     private final BasicIntegerValue sendCount;

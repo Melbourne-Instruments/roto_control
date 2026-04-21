@@ -1,6 +1,8 @@
 package com.bitwig.extensions.controllers.melbourneinstruments.binding;
 
 import com.bitwig.extension.controller.api.Parameter;
+import com.bitwig.extensions.controllers.melbourneinstruments.RotoControlExtension;
+import com.bitwig.extensions.controllers.melbourneinstruments.StringUtil;
 import com.bitwig.extensions.controllers.melbourneinstruments.control.RotoKnob;
 import com.bitwig.extensions.controllers.melbourneinstruments.device.RotoMacroParameter;
 import com.bitwig.extensions.framework.Binding;
@@ -31,7 +33,23 @@ public class RotoKnobParameterBinding extends Binding<RotoKnob, Parameter> {
         this.macroParameter = macroParameter;
         if (this.macroParameter != null) {
             parameter.displayedValue().addValueObserver(this::handleDisplayChanged);
+        } else {
+            parameter.displayedValue().addValueObserver(this::handleInternalDisplayChange);
         }
+    }
+    
+    private void handleInternalDisplayChange(String displayValue) {
+        this.displayValue = displayValue;
+        if (isActive()) {
+            final long diff = System.currentTimeMillis() - knobChangeTime;
+            if (diff < 300) {
+                final String msg = "F0 00 22 03 02 0A 18 %02X %02X %sF7".formatted(
+                    0, getSource().getIndex(),
+                    StringUtil.nameToSysEx(displayValue));
+                getSource().updateDisplayValue(msg);
+            }
+        }
+        
     }
     
     public RotoKnobParameterBinding(final RotoKnob knob, final Parameter parameter,
@@ -44,7 +62,7 @@ public class RotoKnobParameterBinding extends Binding<RotoKnob, Parameter> {
         if (isActive()) {
             final long diff = System.currentTimeMillis() - knobChangeTime;
             if (diff < 300) {
-                getSource().updateDisplayValue(macroParameter.getSysExValueString(displayValue));
+                 getSource().updateDisplayValue(macroParameter.getSysExValueString(displayValue));
             }
         }
     }
@@ -106,11 +124,8 @@ public class RotoKnobParameterBinding extends Binding<RotoKnob, Parameter> {
             this.highValue = getSource().getHighValue();
             if (touchRelease != -1 && touchAutomationActive.get()
                 && (System.currentTimeMillis() - touchRelease) < 500) {
-                //RotoControlExtension.println(" Deflect Auto %d", (System.currentTimeMillis() - touchRelease));
                 return;
             }
-            //RotoControlExtension.println(" Value %f", v);
-            //getTarget().value().set(v);
             getTarget().value().setImmediately(v);
         }
     }

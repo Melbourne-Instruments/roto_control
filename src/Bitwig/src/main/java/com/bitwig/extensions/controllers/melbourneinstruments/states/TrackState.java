@@ -1,5 +1,6 @@
 package com.bitwig.extensions.controllers.melbourneinstruments.states;
 
+import com.bitwig.extensions.controllers.melbourneinstruments.RotoControlExtension;
 import com.bitwig.extensions.controllers.melbourneinstruments.StringUtil;
 
 public class TrackState {

@@ -26,11 +26,11 @@ public class RotoControlExtensionDefinition extends ControllerExtensionDefinitio
 
     @Override
     public String getVersion() {
-        return "0.1.01";
+        return "0.1.02";
     }
 
     public String getVersionDate() {
-        return "22-07-25";
+        return "20-04-26";
     }
 
     @Override
@@ -50,7 +50,7 @@ public class RotoControlExtensionDefinition extends ControllerExtensionDefinitio
 
     @Override
     public int getRequiredAPIVersion() {
-        return 22;
+        return 25;
     }
 
     @Override
@@ -66,8 +66,12 @@ public class RotoControlExtensionDefinition extends ControllerExtensionDefinitio
     public String getHelpFilePath() {
         return "Controllers/Melbourne Instruments/Roto-Control.pdf";
     }
-
-
+    
+//    @Override
+//    public boolean isUsingBetaAPI() {
+//        return true;
+//    }
+    
     @Override
     public void listAutoDetectionMidiPortNames(final AutoDetectionMidiPortNamesList list,
         final PlatformType platformType) {

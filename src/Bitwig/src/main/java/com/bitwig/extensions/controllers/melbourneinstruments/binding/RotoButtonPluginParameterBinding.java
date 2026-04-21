@@ -29,7 +29,7 @@ public class RotoButtonPluginParameterBinding extends Binding<RotoButton, RotoCo
     }
 
     public String getSysExValueString(final String value) {
-        return "F0 00 22 03 02 0A 0F %02X %02X %sF7".formatted(
+        return "F0 00 22 03 02 0A 18 %02X %02X %sF7".formatted(
             1, getTarget().getIndex(), StringUtil.nameToSysEx(value));
     }
 
