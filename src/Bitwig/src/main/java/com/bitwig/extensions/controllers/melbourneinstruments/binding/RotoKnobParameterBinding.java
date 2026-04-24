@@ -1,21 +1,17 @@
 package com.bitwig.extensions.controllers.melbourneinstruments.binding;
 
 import com.bitwig.extension.controller.api.Parameter;
-import com.bitwig.extensions.controllers.melbourneinstruments.RotoControlExtension;
-import com.bitwig.extensions.controllers.melbourneinstruments.StringUtil;
 import com.bitwig.extensions.controllers.melbourneinstruments.control.RotoKnob;
 import com.bitwig.extensions.controllers.melbourneinstruments.device.RotoMacroParameter;
 import com.bitwig.extensions.framework.Binding;
 import com.bitwig.extensions.framework.values.BooleanValueObject;
 
 public class RotoKnobParameterBinding extends Binding<RotoKnob, Parameter> {
-    
     private int lowValue;
     private int highValue;
     private long knobChangeTime;
     private long touchRelease;
     private boolean exists;
-    private boolean touched;
     private final RotoMacroParameter macroParameter;
     private String displayValue;
     private final BooleanValueObject touchAutomationActive;
@@ -43,13 +39,9 @@ public class RotoKnobParameterBinding extends Binding<RotoKnob, Parameter> {
         if (isActive()) {
             final long diff = System.currentTimeMillis() - knobChangeTime;
             if (diff < 300) {
-                final String msg = "F0 00 22 03 02 0A 18 %02X %02X %sF7".formatted(
-                    0, getSource().getIndex(),
-                    StringUtil.nameToSysEx(displayValue));
-                getSource().updateDisplayValue(msg);
+                getSource().updateParameterValue(displayValue);
             }
         }
-        
     }
     
     public RotoKnobParameterBinding(final RotoKnob knob, final Parameter parameter,
@@ -62,7 +54,7 @@ public class RotoKnobParameterBinding extends Binding<RotoKnob, Parameter> {
         if (isActive()) {
             final long diff = System.currentTimeMillis() - knobChangeTime;
             if (diff < 300) {
-                 getSource().updateDisplayValue(macroParameter.getSysExValueString(displayValue));
+                getSource().updateParameterValue(displayValue);
             }
         }
     }
@@ -75,7 +67,6 @@ public class RotoKnobParameterBinding extends Binding<RotoKnob, Parameter> {
     
     private void handleTouched(final boolean touched) {
         if (isActive()) {
-            this.touched = touched;
             getTarget().touch(touched);
             if (!touched) {
                 knobChangeTime = System.currentTimeMillis();
@@ -133,7 +124,6 @@ public class RotoKnobParameterBinding extends Binding<RotoKnob, Parameter> {
     @Override
     protected void deactivate() {
         getTarget().touch(false);
-        touched = false;
         touchRelease = -1;
     }
     

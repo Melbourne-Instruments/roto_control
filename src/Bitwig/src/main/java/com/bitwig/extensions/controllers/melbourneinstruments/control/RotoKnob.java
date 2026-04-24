@@ -4,7 +4,6 @@ import com.bitwig.extension.controller.api.HardwareButton;
 import com.bitwig.extension.controller.api.HardwareSurface;
 import com.bitwig.extension.controller.api.SettableDoubleValue;
 import com.bitwig.extensions.controllers.melbourneinstruments.MidiProcessor;
-import com.bitwig.extensions.controllers.melbourneinstruments.RotoControlExtension;
 import com.bitwig.extensions.framework.values.BasicDoubleValue;
 
 public class RotoKnob {
@@ -81,6 +80,10 @@ public class RotoKnob {
                 lastSentHigh = highValue;
             }
         }
+    }
+    
+    public void updateParameterValue(String value) {
+        midiProcessor.placeParameterUpdate(false, index, value);
     }
     
     public void updateDisplayValue(final String sysExName) {

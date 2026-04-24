@@ -1,6 +1,5 @@
 package com.bitwig.extensions.controllers.melbourneinstruments.binding;
 
-import com.bitwig.extensions.controllers.melbourneinstruments.RotoControlExtension;
 import com.bitwig.extensions.controllers.melbourneinstruments.control.RotoKnob;
 import com.bitwig.extensions.controllers.melbourneinstruments.value.ValueProxy;
 import com.bitwig.extensions.framework.Binding;
@@ -22,8 +21,8 @@ public class RotoKnobValueBinding extends Binding<RotoKnob, ValueProxy> {
     }
     
     private void handleDisplayValueChanged(String displayValue) {
-        if(isActive()) {
-            RotoControlExtension.println(" UPDATE VALUE "  + displayValue);
+        if (isActive()) {
+            getSource().updateParameterValue(displayValue);
         }
     }
     

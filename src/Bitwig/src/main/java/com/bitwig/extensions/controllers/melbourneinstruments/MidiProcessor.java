@@ -54,6 +54,50 @@ public class MidiProcessor {
     protected final Queue<TimedEvent> timedEvents = new ConcurrentLinkedQueue<>();
     private final List<DisplayResetState> resetCalls = new ArrayList<>();
     private final Map<Integer, int[]> pendingCCs = new HashMap<>();
+    private final ParamBuffer paramBuffer = new ParamBuffer();
+    
+    private class ParamBuffer {
+        private final String[] parameterValueUpdate = new String[8];
+        private final String[] parameterButtonUpdate = new String[8];
+        private boolean hasPendingValue = false;
+        private boolean hasPendingButton = false;
+        private int counter = 0;
+        
+        public void placeParameterUpdate(int index, String value) {
+            parameterValueUpdate[index] = value;
+            hasPendingValue = true;
+        }
+        
+        public void placeButtonUpdate(int index, String value) {
+            parameterButtonUpdate[index] = value;
+            hasPendingButton = true;
+        }
+        
+        public void updatePendingParamUpdates() {
+            counter++;
+            if (counter % 2 != 0) {
+                return;
+            }
+            if (hasPendingValue) {
+                for (int i = 0; i < parameterValueUpdate.length; i++) {
+                    if (parameterValueUpdate[i] != null) {
+                        midiOut.sendSysex(getParamUpdate(i, false, parameterValueUpdate[i]));
+                        parameterValueUpdate[i] = null;
+                    }
+                }
+                hasPendingValue = false;
+            }
+            if (hasPendingButton) {
+                for (int i = 0; i < parameterButtonUpdate.length; i++) {
+                    if (parameterButtonUpdate[i] != null) {
+                        midiOut.sendSysex(getParamUpdate(i, true, parameterButtonUpdate[i]));
+                        parameterButtonUpdate[i] = null;
+                    }
+                }
+                hasPendingButton = false;
+            }
+        }
+    }
     
     private static class DisplayResetState {
         private Runnable resetCallback;
@@ -74,7 +118,6 @@ public class MidiProcessor {
                 resetCallback = null;
             }
         }
-        
     }
     
     public MidiProcessor(final ControllerHost host) {
@@ -82,9 +125,9 @@ public class MidiProcessor {
         this.midiIn = host.getMidiInPort(0);
         this.midiOut = host.getMidiOutPort(0);
         final NoteInput noteInput =
-            midiIn.createNoteInput(
-                "MIDI", "8?????", "9?????", "A?????", "D?????", "B0????", "B1????", "B1????", "B3????", "B4????",
-                "B5????", "B6????", "B7????", "B8????", "B9????", "BA????", "BB????", "BC????", "BD????", "BE????");
+            midiIn.createNoteInput("MIDI", "8?????", "9?????", "A?????", "D?????", "B0????", "B1????", "B1????",
+                "B3????", "B4????", "B5????", "B6????", "B7????", "B8????", "B9????", "BA????", "BB????", "BC????",
+                "BD????", "BE????");
         noteInput.setShouldConsumeEvents(true);
         midiIn.setMidiCallback(this::handleMidiIn);
         midiIn.setSysexCallback(this::handleSysEx);
@@ -137,13 +180,15 @@ public class MidiProcessor {
         if (!pendingCCs.isEmpty() && !ccOutBlocked) {
             flushPendingCCs();
         }
-        if(ccInsBlocked && (System.currentTimeMillis()-inBlockTime) > 1000) {
+        if (ccInsBlocked && (System.currentTimeMillis() - inBlockTime) > 1000) {
             RotoControlExtension.println(" Free Blockage");
             unBlockCc();
         }
+        paramBuffer.updatePendingParamUpdates();
         resetCalls.forEach(DisplayResetState::process);
         host.scheduleTask(this::processMidi, 30);
     }
+    
     
     public void flushPendingCCs() {
         final ArrayList<Integer> ccNrs = new ArrayList<>(pendingCCs.keySet());
@@ -176,10 +221,10 @@ public class MidiProcessor {
     }
     
     private void handleRotoUpdate(final int command, final int commandNum, final String data) {
-//        RotoControlExtension.println("INCOMING = %s  => %02X // %02X    ", data, command, commandNum);
-//        if (command != CMD_ID_PLUGIN && commandNum != 0xB) {
-//            RotoControlExtension.println("Sys Ex = %s  => %s // %s", data, command, commandNum);
-//        }
+        //        RotoControlExtension.println("INCOMING = %s  => %02X // %02X    ", data, command, commandNum);
+        //        if (command != CMD_ID_PLUGIN && commandNum != 0xB) {
+        //            RotoControlExtension.println("Sys Ex = %s  => %s // %s", data, command, commandNum);
+        //        }
         if (command == CMD_ID_GENERAL) {
             switch (commandNum) {
                 case 0x6 -> mixState.setTrackOffset(getSysExIntValue(4, data));
@@ -223,8 +268,7 @@ public class MidiProcessor {
         final int major = getSysExValue(4, data);
         final int minor = getSysExValue(6, data);
         final int patch = getSysExValue(8, data);
-        RotoControlExtension.println(
-            "Firmware Version %d.%d.%d   %s", major, minor, patch,
+        RotoControlExtension.println("Firmware Version %d.%d.%d   %s", major, minor, patch,
             StringUtil.toAscii(data.substring(RCV_HEADER_OFFSET + 10, RCV_HEADER_OFFSET + 24)));
         //        this.preferences.getVersion().set(version);
         //        this.preferences.getFwVersion()
@@ -235,8 +279,7 @@ public class MidiProcessor {
     
     private void handleMixerUpdate(final String data) {
         ensureInit();
-        mixState.setMixMode(
-            getSysExValue(4, data), //
+        mixState.setMixMode(getSysExValue(4, data), //
             getSysExValue(6, data), //
             getSysExValue(8, data), getSysExValue(0xA, data));
     }
@@ -250,7 +293,7 @@ public class MidiProcessor {
     
     private void handleMidiIn(final int status, final int data1, final int data2) {
         if (status == 0xBF) {
-            if(ccInsBlocked) {
+            if (ccInsBlocked) {
                 //RotoControlExtension.println(" DEFLECT ");
                 return;
             }
@@ -317,6 +360,15 @@ public class MidiProcessor {
         }
     }
     
+    public void placeParameterUpdate(boolean button, int index, String value) {
+        if (button) {
+            RotoControlExtension.println(" BUTTON " + index);
+            paramBuffer.placeButtonUpdate(index, value);
+        } else {
+            paramBuffer.placeParameterUpdate(index, value);
+        }
+    }
+    
     public void sendSysEx(final String sysExData) {
         if (!initialized) {
             return;
@@ -380,5 +432,24 @@ public class MidiProcessor {
         //RotoControlExtension.println("** UN-BLOCK CC");
         this.ccInsBlocked = false;
         inBlockTime = -1L;
+    }
+    
+    private static byte[] getParamUpdate(int index, boolean onButton, String value) {
+        final byte[] result = new byte[23];
+        result[0] = (byte) 0xF0;
+        result[1] = (byte) 0x00;
+        result[2] = (byte) 0x22;
+        result[3] = (byte) 0x03;
+        result[4] = (byte) 0x02;
+        result[5] = (byte) 0x0A;
+        result[6] = (byte) 0x18;
+        result[7] = (byte) (onButton ? 0x01 : 0x00);
+        result[8] = (byte) index;
+        final String text = StringUtil.toAsciiDisplay(value, 12);
+        for (int i = 0; i < 13; i++) {
+            result[i + 9] = i < text.length() ? (byte) text.charAt(i) : 0x00;
+        }
+        result[22] = (byte) 0xF7;
+        return result;
     }
 }

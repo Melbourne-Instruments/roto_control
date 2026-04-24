@@ -1,7 +1,5 @@
 package com.bitwig.extensions.controllers.melbourneinstruments.binding;
 
-import com.bitwig.extensions.controllers.melbourneinstruments.RotoControlExtension;
-import com.bitwig.extensions.controllers.melbourneinstruments.StringUtil;
 import com.bitwig.extensions.controllers.melbourneinstruments.control.RotoKnob;
 import com.bitwig.extensions.controllers.melbourneinstruments.device.RotoControlParameter;
 import com.bitwig.extensions.controllers.melbourneinstruments.device.RotoParameter;
@@ -23,17 +21,12 @@ public class RotoKnobPluginParameterBinding extends Binding<RotoKnob, RotoContro
     }
     
     private void handleDisplayValue(final String value) {
-         if (isActive()) {
+        if (isActive()) {
             final long diff = System.currentTimeMillis() - knobChangeTime;
-             if (diff < 100) {
-                getSource().updateDisplayValue(getSysExValueString(value));
+            if (diff < 100) {
+                getSource().updateParameterValue(value);
             }
         }
-    }
-    
-    public String getSysExValueString(final String value) {
-        return "F0 00 22 03 02 0A 18 %02X %02X %sF7".formatted(
-            0, getTarget().getIndex(), StringUtil.nameToSysEx(value));
     }
     
     private void handleUpdate() {
