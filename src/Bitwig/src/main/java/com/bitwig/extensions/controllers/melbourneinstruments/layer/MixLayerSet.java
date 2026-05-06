@@ -25,6 +25,7 @@ public abstract class MixLayerSet implements ScrollViewSet {
     protected MidiProcessor midiProcessor;
     
     protected final List<TrackState> states;
+    protected final Layer meteringLayer;
     protected final Layer buttonMuteLayer;
     protected final Layer buttonSoloLayer;
     protected final Layer buttonArmLayer;
@@ -48,17 +49,8 @@ public abstract class MixLayerSet implements ScrollViewSet {
         volumeLayer = new Layer(layers, "VOLUME_LAYER_%s".formatted(name));
         panLayer = new Layer(layers, "PAN_LAYER_%s".formatted(name));
         sendLayer = new Layer(layers, "SEND_LAYER_%s".formatted(name));
+        meteringLayer = new Layer(layers, "METERING_LAYER_%s".formatted(name));
         this.effectTrackSet = effectTrackSet;
-    }
-    
-    // Out of commission until we get unlimited tracks and follow again
-    public boolean adjustTrackScroll(final int pos) {
-        if (pos <= firstIndex || pos >= (firstIndex + 8)) {
-            this.firstIndex = (pos / 8) * 8;
-            trackBank.scrollPosition().set(firstIndex);
-            return true;
-        }
-        return false;
     }
     
     public String getName() {
@@ -195,4 +187,7 @@ public abstract class MixLayerSet implements ScrollViewSet {
     public abstract void bind(final RotoButton[] buttons, final RotoKnob[] knobs, final Runnable updateCall,
         BooleanValueObject touchAutomationActive);
     
+    public void activateMetering(boolean active) {
+        meteringLayer.setIsActive(active);
+    }
 }

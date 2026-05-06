@@ -2,6 +2,7 @@ package com.bitwig.extensions.controllers.melbourneinstruments.layer;
 
 import com.bitwig.extensions.controllers.melbourneinstruments.MidiProcessor;
 import com.bitwig.extensions.controllers.melbourneinstruments.binding.RotoKnobValueBinding;
+import com.bitwig.extensions.controllers.melbourneinstruments.binding.SlotMeteringBinding;
 import com.bitwig.extensions.controllers.melbourneinstruments.control.RotoButton;
 import com.bitwig.extensions.controllers.melbourneinstruments.control.RotoKnob;
 import com.bitwig.extensions.controllers.melbourneinstruments.states.MasterEfxTrackBank;
@@ -27,6 +28,7 @@ public class MasterMixLayerSet extends MixLayerSet {
         
         for (int i = 0; i < 8; i++) {
             final MasterEfxTrackBank.TrackSlot slot = masterTrackBank.getTrackSlots().get(i);
+            this.meteringLayer.addBinding(new SlotMeteringBinding(i, slot, midiProcessor));
             bindButtons(buttons[i], slot);
             bindKnobs(knobs[i], slot);
             bindToTrackState(i, slot, updateCall);

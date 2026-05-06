@@ -3,6 +3,7 @@ package com.bitwig.extensions.controllers.melbourneinstruments.layer;
 import com.bitwig.extension.controller.api.Track;
 import com.bitwig.extension.controller.api.TrackBank;
 import com.bitwig.extensions.controllers.melbourneinstruments.MidiProcessor;
+import com.bitwig.extensions.controllers.melbourneinstruments.binding.TrackMeteringBinding;
 import com.bitwig.extensions.controllers.melbourneinstruments.control.RotoButton;
 import com.bitwig.extensions.controllers.melbourneinstruments.control.RotoKnob;
 import com.bitwig.extensions.framework.Layers;
@@ -24,12 +25,13 @@ public class MainMixLayerSet extends MixLayerSet {
         });
         for (int i = 0; i < trackBank.getSizeOfBank(); i++) {
             final Track track = trackBank.getItemAt(i);
-            
+            meteringLayer.addBinding(new TrackMeteringBinding(i, track, midiProcessor));
             bindToTrackState(i, track, updateCall);
             bindButtons(buttons[i], track);
             bindKnobs(knobs[i], track, touchAutomationActive);
         }
     }
+    
     
     private void bindButtons(final RotoButton button, final Track track) {
         track.mute().markInterested();

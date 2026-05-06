@@ -10,17 +10,31 @@ public class RotoKnobPluginParameterBinding extends Binding<RotoKnob, RotoContro
     private int lowValue;
     private int highValue;
     private long knobChangeTime;
+    private String displayValue;
+    private final RotoButtonPluginParameterBinding buttonBinding;
     
-    public RotoKnobPluginParameterBinding(final RotoKnob knob, final RotoControlParameter parameter) {
+    public RotoKnobPluginParameterBinding(final RotoKnob knob, final RotoControlParameter parameter,
+        RotoButtonPluginParameterBinding parallelButtonBinding) {
         super(knob, knob, parameter);
         knob.getKnobValue().addValueObserver(this::handleKnobValueChanged);
+        knob.getTouchButton().isPressed().addValueObserver(this::handleTouched);
         parameter.getValue().addValueObserver(this::handleParameterValueChanged);
         parameter.getValue().addTriggerListener(this::handleUpdate);
         parameter.getDisplayValue().addValueObserver(this::handleDisplayValue);
+        displayValue = parameter.getDisplayValue().get();
+        this.buttonBinding = parallelButtonBinding;
         updateValues(parameter.getValue().get());
     }
     
+    private void handleTouched(boolean touched) {
+        if (isActive() && touched) {
+            getSource().placeParameterUpdateDirect(displayValue);
+            buttonBinding.showDisplayParameter();
+        }
+    }
+    
     private void handleDisplayValue(final String value) {
+        this.displayValue = value;
         if (isActive()) {
             final long diff = System.currentTimeMillis() - knobChangeTime;
             if (diff < 100) {
@@ -70,6 +84,7 @@ public class RotoKnobPluginParameterBinding extends Binding<RotoKnob, RotoContro
     protected void activate() {
         final RotoKnob knob = getSource();
         final RotoParameter param = getTarget().getParameter();
+        displayValue = getTarget().getDisplayValue().get();
         if (param != null) {
             updateValues(param.getValue());
         }

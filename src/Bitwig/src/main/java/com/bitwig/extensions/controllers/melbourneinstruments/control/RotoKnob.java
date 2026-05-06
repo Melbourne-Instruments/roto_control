@@ -86,8 +86,8 @@ public class RotoKnob {
         midiProcessor.placeParameterUpdate(false, index, value);
     }
     
-    public void updateDisplayValue(final String sysExName) {
-        midiProcessor.sendSysEx(sysExName);
+    public void placeParameterUpdateDirect(String value) {
+        midiProcessor.placeParameterUpdateDirect(false, index, value);
     }
     
 }

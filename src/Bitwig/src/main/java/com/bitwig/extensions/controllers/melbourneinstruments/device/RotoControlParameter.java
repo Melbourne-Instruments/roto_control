@@ -42,10 +42,18 @@ public class RotoControlParameter {
         return parameter;
     }
     
+    public boolean isAssigned() {
+        return this.parameter != null;
+    }
+    
+    public void reset() {
+        this.parameter = null;
+    }
     
     public void setParameter(final RotoParameter parameter) {
         this.parameter = parameter;
         value.set(parameter.getValue());
+        displayValue.set(parameter.getDisplayName());
         value.triggerUpdate();
     }
     

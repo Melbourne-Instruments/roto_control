@@ -92,15 +92,21 @@ public class PluginModeHandler implements ScrollViewSet {
         final CursorRemoteControlsPage remotes = viewControl.getDeviceRemotes();
         
         cursorDevice.isRemoteControlsSectionVisible().addValueObserver(
-            remotesVisible -> evaluateMacroMode(cursorDevice.isPlugin().get(), remotesVisible,
-                cursorDevice.hasLayers().get(), cursorDevice.name().get()));
-        cursorDevice.name().addValueObserver(name -> evaluateMacroMode(cursorDevice.isPlugin().get(),
-            cursorDevice.isRemoteControlsSectionVisible().get(), cursorDevice.hasLayers().get(), name));
-        cursorDevice.hasLayers().addValueObserver(hasLayers -> evaluateMacroMode(cursorDevice.isPlugin().get(),
-            cursorDevice.isRemoteControlsSectionVisible().get(), hasLayers, cursorDevice.name().get()));
-        cursorDevice.isPlugin().addValueObserver(
-            isPlugin -> evaluateMacroMode(isPlugin, cursorDevice.isRemoteControlsSectionVisible().get(),
-                cursorDevice.hasLayers().get(), cursorDevice.name().get()));
+            remotesVisible -> evaluateMacroMode(
+                cursorDevice.isPlugin().get(), remotesVisible, cursorDevice.hasLayers().get(),
+                cursorDevice.name().get()));
+        cursorDevice.name()
+            .addValueObserver(name -> evaluateMacroMode(
+                cursorDevice.isPlugin().get(), cursorDevice.isRemoteControlsSectionVisible().get(),
+                cursorDevice.hasLayers().get(), name));
+        cursorDevice.hasLayers()
+            .addValueObserver(hasLayers -> evaluateMacroMode(
+                cursorDevice.isPlugin().get(), cursorDevice.isRemoteControlsSectionVisible().get(), hasLayers,
+                cursorDevice.name().get()));
+        cursorDevice.isPlugin()
+            .addValueObserver(isPlugin -> evaluateMacroMode(
+                isPlugin, cursorDevice.isRemoteControlsSectionVisible().get(), cursorDevice.hasLayers().get(),
+                cursorDevice.name().get()));
         
         bindMarcoDevice(macroDevice, remotes);
         
@@ -180,7 +186,8 @@ public class PluginModeHandler implements ScrollViewSet {
     
     private void handlePageCount(final int pageCount) {
         this.macroDevice.setRemotePages(Math.max(pageCount, 0));
-        evaluateMacroMode(cursorDevice.isPlugin().get(), cursorDevice.isRemoteControlsSectionVisible().get(),
+        evaluateMacroMode(
+            cursorDevice.isPlugin().get(), cursorDevice.isRemoteControlsSectionVisible().get(),
             cursorDevice.hasLayers().get(), cursorDevice.name().get());
     }
     
@@ -258,7 +265,8 @@ public class PluginModeHandler implements ScrollViewSet {
     }
     
     private void handleCursorDeviceNameChanged(final String name) {
-        activeParameterSet = this.deviceParameterSetMap.computeIfAbsent(name,
+        activeParameterSet = this.deviceParameterSetMap.computeIfAbsent(
+            name,
             key -> new DeviceParameterSet(name, cursorDevice.isPlugin().get()));
         cursorDeviceState.setParameterSet(activeParameterSet);
         this.mainHandler.notifyDawPluginUpdate();
@@ -284,7 +292,8 @@ public class PluginModeHandler implements ScrollViewSet {
         if (name.isBlank()) {
             state.setParameterSet(null);
         } else {
-            final DeviceParameterSet parameterSet = this.deviceParameterSetMap.computeIfAbsent(name,
+            final DeviceParameterSet parameterSet = this.deviceParameterSetMap.computeIfAbsent(
+                name,
                 key -> new DeviceParameterSet(name, cursorDevice.isPlugin().get()));
             state.setParameterSet(parameterSet);
             mainHandler.markUpdateRequired(FocusSource.PLUGIN);
@@ -329,7 +338,7 @@ public class PluginModeHandler implements ScrollViewSet {
             learnProcessor.captureDisplayValue(parameter, value);
         } else if (!inLearningMode) {
             final RotoControlParameter rotoParam = controlParamMap.get(pid);
-            if (rotoParam != null) {
+            if (rotoParam != null && !value.isBlank()) {
                 rotoParam.setDisplayValue(value);
             }
         }
@@ -358,12 +367,18 @@ public class PluginModeHandler implements ScrollViewSet {
         deviceBank.scrollPosition().set(firstPlugin);
     }
     
+    long incomingBatch = 0L;
+    
     public Optional<RotoParameter> activateParameter(final ParameterSettings setting) {
         if (activeParameterSet == null) {
             return Optional.empty();
         }
         final RotoParameter parameter = activeParameterSet.getParameterByHash(setting.hashValue());
         if (parameter != null) {
+            if ((System.currentTimeMillis() - incomingBatch) > 200) {
+                incomingBatch = System.currentTimeMillis();
+                mainHandler.resetParameter();
+            }
             applyParameterToDevice(setting.controlType(), setting.pageIndex(), parameter);
             return Optional.of(parameter);
         } else if (inMacroMode.get()) {
@@ -381,6 +396,7 @@ public class PluginModeHandler implements ScrollViewSet {
         if (!pendingParamUpdate) {
             controlParamMap.clear();
         }
+        
         final RotoControlParameter controlParam = mainHandler.getParameter(pageIndex, controlType);
         
         controlParam.setParameter(parameter);
@@ -393,10 +409,12 @@ public class PluginModeHandler implements ScrollViewSet {
     
     private void updateParams() {
         List<String> ids = new ArrayList<>();
-        controlParamMap.values().stream().map(RotoControlParameter::getParamId).forEach(id -> {
-            ids.add("CONTENTS/ROOT_GENERIC_MODULE/%s".formatted(id));
-            ids.add("CONTENTS/%s".formatted(id));
-        });
+        controlParamMap.values().stream() //
+            .map(RotoControlParameter::getParamId) //
+            .forEach(id -> {
+                ids.add("CONTENTS/ROOT_GENERIC_MODULE/%s".formatted(id));
+                ids.add("CONTENTS/%s".formatted(id));
+            });
         //RotoControlExtension.println(" --------------- ");
         //controlParamMap.values().forEach(pa -> {
         //    RotoControlExtension.println(" > %d %s %s", pa.getIndex(), pa.getName(), pa.getParamId());
@@ -470,9 +488,9 @@ public class PluginModeHandler implements ScrollViewSet {
     
     
     private String getMacroUpdate() {
-        return "F0 00 22 03 02 0B 05 %02X %s %02X %s01 %02X F7".formatted(cursorDeviceState.getIndex(),
-            macroDevice.getSysExHash(), cursorDeviceState.isEnabled() ? 1 : 0, cursorDeviceState.getSysExName(),
-            macroDevice.getRemotePages());
+        return "F0 00 22 03 02 0B 05 %02X %s %02X %s01 %02X F7".formatted(
+            cursorDeviceState.getIndex(), macroDevice.getSysExHash(), cursorDeviceState.isEnabled() ? 1 : 0,
+            cursorDeviceState.getSysExName(), macroDevice.getRemotePages());
     }
     
     public MacroDevice getMacroDevice() {

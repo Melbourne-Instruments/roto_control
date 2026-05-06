@@ -26,10 +26,14 @@ public class ValueProxy {
     }
     
     public void setDisplayValue(String displayValue) {
-        if(this.displayValue != displayValue) {
+        if (this.displayValue != displayValue) {
             this.displayValue = displayValue;
             displayValueListeners.stream().forEach(listener -> listener.accept(this.displayValue));
         }
+    }
+    
+    public String getDisplayValue() {
+        return displayValue;
     }
     
     public void addValueObserver(final DoubleConsumer listener) {

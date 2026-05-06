@@ -10,6 +10,7 @@ import com.bitwig.extension.controller.api.SendBank;
 import com.bitwig.extension.controller.api.Track;
 import com.bitwig.extension.controller.api.TrackBank;
 import com.bitwig.extensions.controllers.melbourneinstruments.RotoViewControl;
+import com.bitwig.extensions.controllers.melbourneinstruments.binding.MeteringBinding;
 import com.bitwig.extensions.controllers.melbourneinstruments.value.ColorUtil;
 import com.bitwig.extensions.controllers.melbourneinstruments.value.ValueProxy;
 import com.bitwig.extensions.framework.values.BasicIntegerValue;
@@ -39,6 +40,8 @@ public class MasterEfxTrackBank {
         private final ValueProxy volume = new ValueProxy();
         private final ValueProxy pan = new ValueProxy();
         private final ValueProxy send = new ValueProxy();
+        private final BasicIntegerValue vuMeterLeft = new BasicIntegerValue();
+        private final BasicIntegerValue vuMeterRight = new BasicIntegerValue();
         
         private TrackSlot(final int index) {
             this.index = index;
@@ -138,6 +141,13 @@ public class MasterEfxTrackBank {
             }
         }
         
+        public BasicIntegerValue getVuMeterLeft() {
+            return vuMeterLeft;
+        }
+        
+        public BasicIntegerValue getVuMeterRight() {
+            return vuMeterRight;
+        }
         
         public BasicStringValue name() {
             return name;
@@ -195,23 +205,30 @@ public class MasterEfxTrackBank {
     
     
     private void attachTrackToSlot(final Track track, final int index) {
+        track.addVuMeterObserver(
+            MeteringBinding.METERING_MAX + 1, 0, false,
+            vuValue -> getSlot(index).ifPresent(slot -> slot.getVuMeterLeft().set(vuValue)));
+        track.addVuMeterObserver(
+            MeteringBinding.METERING_MAX + 1, 1, false,
+            vuValue -> getSlot(index).ifPresent(slot -> slot.getVuMeterRight().set(vuValue)));
         track.mute().addValueObserver(mute -> getSlot(index).ifPresent(slot -> slot.getMute().set(mute)));
         track.arm().addValueObserver(arm -> getSlot(index).ifPresent(slot -> slot.getArm().set(arm)));
         track.solo().addValueObserver(solo -> getSlot(index).ifPresent(slot -> slot.getSolo().set(solo)));
         track.volume().value().addValueObserver(value -> getSlot(index).ifPresent(slot -> slot.getVolume().set(value)));
-        track.volume().displayedValue().addValueObserver(value -> getSlot(index).ifPresent(slot -> slot.getVolume().setDisplayValue(value)));
+        track.volume().displayedValue()
+            .addValueObserver(value -> getSlot(index).ifPresent(slot -> slot.getVolume().setDisplayValue(value)));
         
         track.pan().value().addValueObserver(value -> getSlot(index).ifPresent(slot -> slot.getPan().set(value)));
-        track.pan().displayedValue().addValueObserver(value -> getSlot(index).ifPresent(slot -> slot.getPan().setDisplayValue(value)));
-
+        track.pan().displayedValue()
+            .addValueObserver(value -> getSlot(index).ifPresent(slot -> slot.getPan().setDisplayValue(value)));
+        
         track.name().addValueObserver(name -> getSlot(index).ifPresent(slot -> slot.name.set(name)));
         track.exists().addValueObserver(exists -> getSlot(index).ifPresent(slot -> slot.exists.set(exists)));
         track.color().addValueObserver(
             (r, g, b) -> getSlot(index).ifPresent(slot -> slot.color.set(ColorUtil.toColor(r, g, b))));
         if (index != -1) {
             Send sendItem = track.sendBank().getItemAt(0);
-            sendItem.value()
-                .addValueObserver(value -> getSlot(index).ifPresent(slot -> slot.send.set(value)));
+            sendItem.value().addValueObserver(value -> getSlot(index).ifPresent(slot -> slot.send.set(value)));
             sendItem.displayedValue()
                 .addValueObserver(value -> getSlot(index).ifPresent(slot -> slot.send.setDisplayValue(value)));
         }

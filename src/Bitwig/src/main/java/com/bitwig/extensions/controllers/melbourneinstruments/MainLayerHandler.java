@@ -17,6 +17,7 @@ import com.bitwig.extension.controller.api.Transport;
 import com.bitwig.extensions.controllers.melbourneinstruments.binding.RotoButtonPluginParameterBinding;
 import com.bitwig.extensions.controllers.melbourneinstruments.binding.RotoKnobParameterBinding;
 import com.bitwig.extensions.controllers.melbourneinstruments.binding.RotoKnobPluginParameterBinding;
+import com.bitwig.extensions.controllers.melbourneinstruments.binding.TrackMeteringBinding;
 import com.bitwig.extensions.controllers.melbourneinstruments.control.RotoButton;
 import com.bitwig.extensions.controllers.melbourneinstruments.control.RotoKnob;
 import com.bitwig.extensions.controllers.melbourneinstruments.device.MacroDevice;
@@ -57,6 +58,7 @@ public class MainLayerHandler {
     private final Layer cursorTrackLayer2;
     private final Layer pluginControlLayer;
     private final Layer macroControlLayer;
+    private final Layer cursorTrackMeterLayer;
     
     private final RotoHwElements hwElements;
     private final CursorTrack cursorTrack;
@@ -86,6 +88,7 @@ public class MainLayerHandler {
     private DeviceParameterUpdateState macroChangeState = DeviceParameterUpdateState.NONE;
     private DeviceParameterUpdateState pendingDeviceChange = DeviceParameterUpdateState.NONE;
     private int lastSentTrackIndex = -1;
+    private int invokedTrackSelection = -1;
     
     private enum DeviceParameterUpdateState {
         NONE,
@@ -110,7 +113,7 @@ public class MainLayerHandler {
             new MainMixLayerSet(layers, midiProcessor, "MAIN", viewControl.getTrackBank(), effectTrackSet);
         this.masterMixSet = new MasterMixLayerSet(layers, midiProcessor, "MASTER", masterFxTrackBank, effectTrackSet);
         application.projectName().addValueObserver(projectName -> unlockDeviceAndTrack(viewControl.getCursorDevice()));
-        
+        cursorTrackMeterLayer = new Layer(layers, "CURSOR_METER_LAYER");
         currentMixSet = this.mixLayerSet;
         this.midiProcessor = midiProcessor;
         this.hwElements = hwElements;
@@ -118,6 +121,8 @@ public class MainLayerHandler {
         cursorTrack = viewControl.getCursorTrack();
         cursorTrack.isGroup().markInterested();
         cursorTrack.isGroupExpanded().markInterested();
+        
+        cursorTrackMeterLayer.addBinding(new TrackMeteringBinding(0, cursorTrack, midiProcessor));
         
         this.selectionEffectBank = host.createEffectTrackBank(8, 0);
         for (int i = 0; i < this.selectionEffectBank.getSizeOfBank(); i++) {
@@ -155,15 +160,20 @@ public class MainLayerHandler {
         
         final MacroDevice macroDevice = pluginModeHandler.getMacroDevice();
         for (int i = 0; i < 8; i++) {
-            this.pluginControlLayer.addBinding(new RotoKnobPluginParameterBinding(knobs[i], knobParameters.get(i)));
-            this.pluginControlLayer.addBinding(
-                new RotoButtonPluginParameterBinding(buttons[i], buttonParameters.get(i)));
+            RotoButtonPluginParameterBinding buttonBinding =
+                new RotoButtonPluginParameterBinding(buttons[i], buttonParameters.get(i));
+            RotoKnobPluginParameterBinding pluginKnobBinding =
+                new RotoKnobPluginParameterBinding(knobs[i], knobParameters.get(i), buttonBinding);
+            
+            this.pluginControlLayer.addBinding(buttonBinding);
+            this.pluginControlLayer.addBinding(pluginKnobBinding);
             
             this.macroControlLayer.addBinding(
                 new RotoKnobParameterBinding(
                     knobs[i], macroDevice.getRemoteParameter(i), macroDevice.getItem(i),
                     viewControl.getTouchAutomationActive()));
         }
+        
         mixLayerSet.bind(
             buttons, knobs, () -> markUpdateRequired(FocusSource.MIXER_MAIN), viewControl.getTouchAutomationActive());
         masterMixSet.bind(
@@ -260,14 +270,16 @@ public class MainLayerHandler {
         if (inPluginMode) {
             placeUpdate(source.getUpdateType());
         } else {
-            placeUpdate(getActiveUpdateType(), UpdateType.UPDATE_CONTROLS);
+            if (source != FocusSource.PLUGIN) {
+                placeUpdate(getActiveUpdateType(), UpdateType.UPDATE_CONTROLS);
+            }
         }
     }
     
     public void selectTrack(final int trackIndex) {
         this.selectedTrackIndex = trackIndex;
+        this.invokedTrackSelection = trackIndex;
         currentMixSet.selectTrack(trackIndex);
-        placeUpdate(UpdateType.SELECTION);
     }
     
     public void toTransportMode() {
@@ -290,7 +302,9 @@ public class MainLayerHandler {
         allMode = mode == 0 ? FocusSource.MIXER_MAIN : FocusSource.MIXER_MASTER;
         trackMode.set(false);
         
+        this.currentMixSet.activateMetering(false);
         this.currentMixSet = mode == 0 ? mixLayerSet : masterMixSet;
+        this.currentMixSet.activateMetering(knobMode.isMixMode());
         midiProcessor.setCcOutBlocked(true);
         
         currentMixSet.sendStates();
@@ -308,10 +322,12 @@ public class MainLayerHandler {
     public void setMixMode(final int allMode, final int knobMode, final int buttonMode, final int selectedSend) {
         this.inPluginMode = false;
         this.allMode = allMode == 0 ? FocusSource.MIXER_MAIN : FocusSource.MIXER_MASTER;
+        this.currentMixSet.activateMetering(false);
         this.currentMixSet = allMode == 0 ? mixLayerSet : masterMixSet;
         trackMode.set(false);
         this.buttonMode = ButtonMode.toMode(buttonMode);
         this.knobMode = KnobMode.toMode(knobMode);
+        this.currentMixSet.activateMetering(this.knobMode.isMixMode());
         
         if (this.knobMode == KnobMode.SEND) {
             currentMixSet.selectSendBank(selectedSend);
@@ -415,7 +431,7 @@ public class MainLayerHandler {
     
     public void activateParameter(final ParameterSettings setting) {
         pluginModeHandler.activateParameter(setting).ifPresent(this::handleParamUpdate);
-        if(setting.index() == 8) {
+        if (setting.index() == 8) {
             midiProcessor.unBlockCc();
         }
     }
@@ -509,7 +525,7 @@ public class MainLayerHandler {
     
     private void sendUpdateFocusTrack(final boolean force) {
         if (selectedTrackIndex >= 0 && (force || selectedTrackIndex != lastSentTrackIndex)) {
-            if(cursorTrackState.getName() != null) {
+            if (cursorTrackState.getName() != null) {
                 midiProcessor.sendSysEx(cursorTrackState.toSysExUpdateSel(selectedTrackIndex));
             }
             lastSentTrackIndex = selectedTrackIndex;
@@ -517,12 +533,19 @@ public class MainLayerHandler {
     }
     
     private void placeUpdate(final UpdateType... types) {
+        //        for (UpdateType t : types) {
+        //            if (!neededUpdate.contains(t)) {
+        //                RotoControlExtension.showCallLocation(" -------- " + t + " -------- ");
+        //            }
+        //        }
         Collections.addAll(neededUpdate, types);
     }
     
     private void updateSelectedTrack() {
         if (selectedTrackIndex >= 0) {
-            placeUpdate(UpdateType.SELECTION);
+            if (knobMode.isPluginMode() || knobMode.isFocusMode()) {
+                placeUpdate(UpdateType.SELECTION);
+            }
         }
     }
     
@@ -535,10 +558,11 @@ public class MainLayerHandler {
         if (inPluginMode) {
             markUpdateRequired(FocusSource.PLUGIN);
         } else if (allMode == FocusSource.MIXER_MAIN) {
-            //if (mixLayerSet.adjustTrackScroll(pos)) { Bring this back with cursor track follow
-            markUpdateRequired(FocusSource.MIXER_MAIN);
-            //}
+            if (invokedTrackSelection != pos) {
+                markUpdateRequired(FocusSource.MIXER_MAIN);
+            }
         }
+        invokedTrackSelection = -1;
     }
     
     private void updateControls() {
@@ -569,6 +593,8 @@ public class MainLayerHandler {
         if (activeLayer != null) {
             activeLayer.setIsActive(true);
         }
+        currentMixSet.activateMetering(knobMode.isMixMode());
+        cursorTrackMeterLayer.setIsActive(knobMode == KnobMode.FOCUS_TRACK);
     }
     
     private void disableKnobLayers() {
@@ -634,6 +660,15 @@ public class MainLayerHandler {
             return knobParameters.get(pageIndex);
         }
         return buttonParameters.get(pageIndex);
+    }
+    
+    public void resetParameter() {
+        for (RotoControlParameter knobParam : knobParameters) {
+            knobParam.reset();
+        }
+        for (RotoControlParameter knobParam : buttonParameters) {
+            knobParam.reset();
+        }
     }
     
     public void toggleRemotePage() {

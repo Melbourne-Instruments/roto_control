@@ -13,6 +13,7 @@ import com.bitwig.extension.controller.api.HardwareButton;
 import com.bitwig.extension.controller.api.MidiIn;
 import com.bitwig.extension.controller.api.MidiOut;
 import com.bitwig.extension.controller.api.NoteInput;
+import com.bitwig.extensions.controllers.melbourneinstruments.binding.MeteringBinding;
 import com.bitwig.extensions.controllers.melbourneinstruments.control.RotoButton;
 import com.bitwig.extensions.controllers.melbourneinstruments.control.RotoKnob;
 import com.bitwig.extensions.controllers.melbourneinstruments.device.ParameterSettings;
@@ -34,6 +35,8 @@ public class MidiProcessor {
     private static final String END_PLUGIN_DETAIL_COMMAND = HEADER + "0B 06 F7";
     private static final String COMMAND_PING = HEADER + "0A 03 02 F7";
     private static final String COMMAND_DAW_START = HEADER + "0A 01 F7";
+    private static final String COMMAND_METER_THRESHOLD =
+        HEADER + "0C 0B 2F %02X F7".formatted(MeteringBinding.METERING_MAX);
     private static final String COMMAND_VALUE_GENERAL_DIR = HEADER + "0A %s F7";
     private static final String COMMAND_VALUE_GENERAL = HEADER + "0A %s %s F7";
     private static final String COMMAND_VALUE_PLUGIN = HEADER + "0B %s %s F7";
@@ -59,6 +62,8 @@ public class MidiProcessor {
     private class ParamBuffer {
         private final String[] parameterValueUpdate = new String[8];
         private final String[] parameterButtonUpdate = new String[8];
+        private final int[] meterUpdates = new int[16];
+        private final boolean[] needsMeterUpdate = new boolean[16];
         private boolean hasPendingValue = false;
         private boolean hasPendingButton = false;
         private int counter = 0;
@@ -76,26 +81,46 @@ public class MidiProcessor {
         public void updatePendingParamUpdates() {
             counter++;
             if (counter % 2 != 0) {
-                return;
+                if (hasPendingValue) {
+                    for (int i = 0; i < parameterValueUpdate.length; i++) {
+                        if (parameterValueUpdate[i] != null) {
+                            midiOut.sendSysex(getParamUpdate(i, false, parameterValueUpdate[i]));
+                            parameterValueUpdate[i] = null;
+                        }
+                    }
+                    hasPendingValue = false;
+                }
+                if (hasPendingButton) {
+                    for (int i = 0; i < parameterButtonUpdate.length; i++) {
+                        if (parameterButtonUpdate[i] != null) {
+                            midiOut.sendSysex(getParamUpdate(i, true, parameterButtonUpdate[i]));
+                            parameterButtonUpdate[i] = null;
+                        }
+                    }
+                    hasPendingButton = false;
+                }
             }
-            if (hasPendingValue) {
-                for (int i = 0; i < parameterValueUpdate.length; i++) {
-                    if (parameterValueUpdate[i] != null) {
-                        midiOut.sendSysex(getParamUpdate(i, false, parameterValueUpdate[i]));
-                        parameterValueUpdate[i] = null;
+            if (counter % 2 == 0) {
+                for (int i = 0; i < meterUpdates.length; i++) {
+                    if (needsMeterUpdate[i]) {
+                        midiOut.sendMidi(0xBF, 65 + i, meterUpdates[i]);
+                        needsMeterUpdate[i] = false;
+                        meterUpdates[i] = 0;
                     }
                 }
-                hasPendingValue = false;
             }
-            if (hasPendingButton) {
-                for (int i = 0; i < parameterButtonUpdate.length; i++) {
-                    if (parameterButtonUpdate[i] != null) {
-                        midiOut.sendSysex(getParamUpdate(i, true, parameterButtonUpdate[i]));
-                        parameterButtonUpdate[i] = null;
-                    }
-                }
-                hasPendingButton = false;
-            }
+        }
+        
+        public void setMeterUpdate(final int i, final int value) {
+            meterUpdates[i] = Math.max(meterUpdates[i], value);
+            needsMeterUpdate[i] = true;
+        }
+        
+        public void placeMeterUpdate(final int index, final int leftValue, final int rightValue) {
+            meterUpdates[index] = leftValue;
+            needsMeterUpdate[index] = true;
+            meterUpdates[index + 1] = rightValue;
+            needsMeterUpdate[index + 1] = true;
         }
     }
     
@@ -124,10 +149,9 @@ public class MidiProcessor {
         this.host = host;
         this.midiIn = host.getMidiInPort(0);
         this.midiOut = host.getMidiOutPort(0);
-        final NoteInput noteInput =
-            midiIn.createNoteInput("MIDI", "8?????", "9?????", "A?????", "D?????", "B0????", "B1????", "B1????",
-                "B3????", "B4????", "B5????", "B6????", "B7????", "B8????", "B9????", "BA????", "BB????", "BC????",
-                "BD????", "BE????");
+        final NoteInput noteInput = midiIn.createNoteInput(
+            "MIDI", "8?????", "9?????", "A?????", "D?????", "B0????", "B1????", "B1????", "B3????", "B4????", "B5????",
+            "B6????", "B7????", "B8????", "B9????", "BA????", "BB????", "BC????", "BD????", "BE????");
         noteInput.setShouldConsumeEvents(true);
         midiIn.setMidiCallback(this::handleMidiIn);
         midiIn.setSysexCallback(this::handleSysEx);
@@ -181,7 +205,7 @@ public class MidiProcessor {
             flushPendingCCs();
         }
         if (ccInsBlocked && (System.currentTimeMillis() - inBlockTime) > 1000) {
-            RotoControlExtension.println(" Free Blockage");
+            //RotoControlExtension.println(" Free Blockage");
             unBlockCc();
         }
         paramBuffer.updatePendingParamUpdates();
@@ -213,6 +237,7 @@ public class MidiProcessor {
         }
         if ("f0002203020a02f7".equals(data)) {
             midiOut.sendSysex(COMMAND_PING);
+            midiOut.sendSysex(COMMAND_METER_THRESHOLD);
         } else {
             final int command = getSysExValue(0, data);
             final int commandNum = getSysExValue(2, data);
@@ -268,7 +293,8 @@ public class MidiProcessor {
         final int major = getSysExValue(4, data);
         final int minor = getSysExValue(6, data);
         final int patch = getSysExValue(8, data);
-        RotoControlExtension.println("Firmware Version %d.%d.%d   %s", major, minor, patch,
+        RotoControlExtension.println(
+            "Firmware Version %d.%d.%d   %s", major, minor, patch,
             StringUtil.toAscii(data.substring(RCV_HEADER_OFFSET + 10, RCV_HEADER_OFFSET + 24)));
         //        this.preferences.getVersion().set(version);
         //        this.preferences.getFwVersion()
@@ -279,7 +305,8 @@ public class MidiProcessor {
     
     private void handleMixerUpdate(final String data) {
         ensureInit();
-        mixState.setMixMode(getSysExValue(4, data), //
+        mixState.setMixMode(
+            getSysExValue(4, data), //
             getSysExValue(6, data), //
             getSysExValue(8, data), getSysExValue(0xA, data));
     }
@@ -362,18 +389,21 @@ public class MidiProcessor {
     
     public void placeParameterUpdate(boolean button, int index, String value) {
         if (button) {
-            RotoControlExtension.println(" BUTTON " + index);
             paramBuffer.placeButtonUpdate(index, value);
         } else {
             paramBuffer.placeParameterUpdate(index, value);
         }
     }
     
+    public void placeParameterUpdateDirect(boolean button, int index, String value) {
+        midiOut.sendSysex(getParamUpdate(index, button, value));
+    }
+    
     public void sendSysEx(final String sysExData) {
         if (!initialized) {
             return;
         }
-        //RotoControlExtension.println("   SEND: %s", sysExData);
+        //RotoControlExtension.showCallLocation(" >> ");
         midiOut.sendSysex(sysExData);
     }
     
@@ -451,5 +481,17 @@ public class MidiProcessor {
         }
         result[22] = (byte) 0xF7;
         return result;
+    }
+    
+    public void updateMeterRight(final int index, final int value) {
+        paramBuffer.setMeterUpdate(index * 2 + 1, value);
+    }
+    
+    public void updateMeterLeft(final int index, final int value) {
+        paramBuffer.setMeterUpdate(index * 2, value);
+    }
+    
+    public void setMeter(final int index, final int leftValue, final int rightValue) {
+        paramBuffer.placeMeterUpdate(index * 2, leftValue, rightValue);
     }
 }

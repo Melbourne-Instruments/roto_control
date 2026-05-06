@@ -9,18 +9,20 @@ public class RotoKnobValueBinding extends Binding<RotoKnob, ValueProxy> {
     private int lowValue;
     private int highValue;
     private long knobChangeTime;
+    private String displayValue = "";
     
     public RotoKnobValueBinding(final RotoKnob knob, final ValueProxy parameter) {
         super(knob, knob, parameter);
         knob.getKnobValue().addValueObserver(this::handleKnobValueChanged);
         parameter.addValueObserver(this::handleParameterValueChanged);
         parameter.addDisplayValueObserver(this::handleDisplayValueChanged);
-        
+        displayValue = parameter.getDisplayValue();
         updateValues(parameter.get());
         knob.getTouchButton().isPressed().addValueObserver(this::handleTouched);
     }
     
     private void handleDisplayValueChanged(String displayValue) {
+        this.displayValue = displayValue;
         if (isActive()) {
             getSource().updateParameterValue(displayValue);
         }
@@ -29,6 +31,7 @@ public class RotoKnobValueBinding extends Binding<RotoKnob, ValueProxy> {
     private void handleTouched(final boolean touched) {
         if (isActive()) {
             getTarget().touched(touched);
+            getSource().placeParameterUpdateDirect(displayValue);
         }
     }
     

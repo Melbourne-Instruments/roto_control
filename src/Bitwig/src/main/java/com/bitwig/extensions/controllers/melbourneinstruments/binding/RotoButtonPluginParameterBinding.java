@@ -8,10 +8,11 @@ public class RotoButtonPluginParameterBinding extends Binding<RotoButton, RotoCo
     
     private int value;
     private long buttonChangeTime;
+    private String displayValue;
     
-    public RotoButtonPluginParameterBinding(final RotoButton knob, final RotoControlParameter parameter) {
-        super(knob, knob, parameter);
-        knob.getHwKnob().value().addValueObserver(this::handleKnobValueChanged);
+    public RotoButtonPluginParameterBinding(final RotoButton button, final RotoControlParameter parameter) {
+        super(button, button, parameter);
+        button.getHwKnob().value().addValueObserver(this::handleKnobValueChanged);
         parameter.getValue().addValueObserver(this::handleParameterValueChanged);
         parameter.getValue().addTriggerListener(this::handleDirectUpdate);
         parameter.getDisplayValue().addValueObserver(this::handleDisplayValue);
@@ -19,10 +20,19 @@ public class RotoButtonPluginParameterBinding extends Binding<RotoButton, RotoCo
     }
     
     private void handleDisplayValue(String value) {
+        this.displayValue = value;
         if (isActive()) {
             final long diff = System.currentTimeMillis() - buttonChangeTime;
             if (diff < 100) {
-                getSource().getMidiProcessor().placeParameterUpdate(true, getTarget().getIndex(), value);
+                getSource().getMidiProcessor().placeParameterUpdateDirect(true, getTarget().getIndex(), value);
+            }
+        }
+    }
+    
+    public void showDisplayParameter() {
+        if (isActive()) {
+            if (displayValue != null && !displayValue.isBlank() && getTarget().isAssigned()) {
+                getSource().getMidiProcessor().placeParameterUpdateDirect(true, getTarget().getIndex(), displayValue);
             }
         }
     }
@@ -57,4 +67,5 @@ public class RotoButtonPluginParameterBinding extends Binding<RotoButton, RotoCo
         getSource().setLightState(value);
         getSource().forceStateUpdate();
     }
+    
 }

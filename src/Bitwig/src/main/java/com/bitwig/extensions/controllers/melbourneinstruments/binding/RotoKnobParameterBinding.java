@@ -32,6 +32,7 @@ public class RotoKnobParameterBinding extends Binding<RotoKnob, Parameter> {
         } else {
             parameter.displayedValue().addValueObserver(this::handleInternalDisplayChange);
         }
+        displayValue = parameter.displayedValue().get();
     }
     
     private void handleInternalDisplayChange(String displayValue) {
@@ -59,12 +60,6 @@ public class RotoKnobParameterBinding extends Binding<RotoKnob, Parameter> {
         }
     }
     
-    private void resetName() {
-        if (isActive()) {
-            getSource().updateDisplayValue(macroParameter.getSysExNameChange());
-        }
-    }
-    
     private void handleTouched(final boolean touched) {
         if (isActive()) {
             getTarget().touch(touched);
@@ -72,6 +67,7 @@ public class RotoKnobParameterBinding extends Binding<RotoKnob, Parameter> {
                 knobChangeTime = System.currentTimeMillis();
                 touchRelease = knobChangeTime;
             } else {
+                getSource().placeParameterUpdateDirect(displayValue);
                 touchRelease = -1;
             }
         }
