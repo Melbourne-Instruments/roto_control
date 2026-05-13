@@ -301,7 +301,6 @@ public class MainLayerHandler {
     public void setMasterControl(final int mode) {
         allMode = mode == 0 ? FocusSource.MIXER_MAIN : FocusSource.MIXER_MASTER;
         trackMode.set(false);
-        
         this.currentMixSet.activateMetering(false);
         this.currentMixSet = mode == 0 ? mixLayerSet : masterMixSet;
         this.currentMixSet.activateMetering(knobMode.isMixMode());
@@ -533,11 +532,12 @@ public class MainLayerHandler {
     }
     
     private void placeUpdate(final UpdateType... types) {
-        //        for (UpdateType t : types) {
-        //            if (!neededUpdate.contains(t)) {
-        //                RotoControlExtension.showCallLocation(" -------- " + t + " -------- ");
-        //            }
-        //        }
+        for (UpdateType t : types) {
+            if (!neededUpdate.contains(t)) {
+                RotoControlExtension.println(" ###  %s", t);
+                //RotoControlExtension.showCallLocation(" -------- " + t + " -------- ");
+            }
+        }
         Collections.addAll(neededUpdate, types);
     }
     
@@ -646,7 +646,6 @@ public class MainLayerHandler {
     }
     
     public void selectPlugin(final int index) {
-        //RotoControlExtension.println(" SEL PI = %d %s", index, inPluginMode);
         pluginModeHandler.selectPlugin(index);
         pendingDeviceChange = DeviceParameterUpdateState.CHANGE_INVOKED;
     }
@@ -679,4 +678,7 @@ public class MainLayerHandler {
         pluginModeHandler.confirmLearned(type, paramIndex);
     }
     
+    public void pluginParameterPage(final boolean right) {
+        resetParameter();
+    }
 }

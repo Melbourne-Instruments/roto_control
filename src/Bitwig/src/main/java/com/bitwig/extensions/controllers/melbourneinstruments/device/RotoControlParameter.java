@@ -48,6 +48,7 @@ public class RotoControlParameter {
     
     public void reset() {
         this.parameter = null;
+        displayValue.set("");
     }
     
     public void setParameter(final RotoParameter parameter) {

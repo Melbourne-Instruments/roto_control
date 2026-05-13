@@ -246,10 +246,10 @@ public class MidiProcessor {
     }
     
     private void handleRotoUpdate(final int command, final int commandNum, final String data) {
-        //        RotoControlExtension.println("INCOMING = %s  => %02X // %02X    ", data, command, commandNum);
-        //        if (command != CMD_ID_PLUGIN && commandNum != 0xB) {
-        //            RotoControlExtension.println("Sys Ex = %s  => %s // %s", data, command, commandNum);
-        //        }
+        //RotoControlExtension.println("INCOMING = %s  => %02X // %02X    ", data, command, commandNum);
+        //                if (command != CMD_ID_PLUGIN && commandNum != 0xB) {
+        //                    RotoControlExtension.println("Sys Ex = %s  => %s // %s", data, command, commandNum);
+        //                }
         if (command == CMD_ID_GENERAL) {
             switch (commandNum) {
                 case 0x6 -> mixState.setTrackOffset(getSysExIntValue(4, data));
@@ -260,6 +260,8 @@ public class MidiProcessor {
                 }
                 case 0xC -> sendGeneralCommandDirect("0D");
                 case 0xE -> handleVersionInfo(data);
+                case 0x14 -> mixState.pluginParameterPage(false);
+                case 0x15 -> mixState.pluginParameterPage(true);
             }
         } else if (command == CMD_ID_PLUGIN) {
             switch (commandNum) {

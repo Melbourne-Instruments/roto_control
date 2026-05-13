@@ -367,18 +367,12 @@ public class PluginModeHandler implements ScrollViewSet {
         deviceBank.scrollPosition().set(firstPlugin);
     }
     
-    long incomingBatch = 0L;
-    
     public Optional<RotoParameter> activateParameter(final ParameterSettings setting) {
         if (activeParameterSet == null) {
             return Optional.empty();
         }
         final RotoParameter parameter = activeParameterSet.getParameterByHash(setting.hashValue());
         if (parameter != null) {
-            if ((System.currentTimeMillis() - incomingBatch) > 200) {
-                incomingBatch = System.currentTimeMillis();
-                mainHandler.resetParameter();
-            }
             applyParameterToDevice(setting.controlType(), setting.pageIndex(), parameter);
             return Optional.of(parameter);
         } else if (inMacroMode.get()) {
