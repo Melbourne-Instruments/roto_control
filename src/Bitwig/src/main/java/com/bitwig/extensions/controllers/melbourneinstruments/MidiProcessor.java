@@ -41,7 +41,8 @@ public class MidiProcessor {
     private static final String COMMAND_VALUE_GENERAL = HEADER + "0A %s %s F7";
     private static final String COMMAND_VALUE_PLUGIN = HEADER + "0B %s %s F7";
     private static final String COMMAND_VALUE_PLUGIN_UPDATE = HEADER + "0B 08 %02X %02X %02X F7";
-    private static final String COMMAND_VALUE_MIX = HEADER + "0C %s %s F7";
+    private static final String COMMAND_SEND_COUNT = HEADER + "0C 03 %02X F7";
+    //private static final String COMMAND_REFRESH_MIX = HEADER + "0C 09 F7";
     
     private final ControllerHost host;
     private final MidiIn midiIn;
@@ -246,48 +247,59 @@ public class MidiProcessor {
     }
     
     private void handleRotoUpdate(final int command, final int commandNum, final String data) {
-        //RotoControlExtension.println("INCOMING = %s  => %02X // %02X    ", data, command, commandNum);
+        // RotoControlExtension.println("INCOMING = %s  => %02X // %02X    ", data, command, commandNum);
         //                if (command != CMD_ID_PLUGIN && commandNum != 0xB) {
         //                    RotoControlExtension.println("Sys Ex = %s  => %s // %s", data, command, commandNum);
         //                }
         if (command == CMD_ID_GENERAL) {
-            switch (commandNum) {
-                case 0x6 -> mixState.setTrackOffset(getSysExIntValue(4, data));
-                case 0x9 -> mixState.selectTrack(getSysExIntValue(4, data));
-                case 0xA -> {
-                    ensureInit();
-                    mixState.toTransportMode();
-                }
-                case 0xC -> sendGeneralCommandDirect("0D");
-                case 0xE -> handleVersionInfo(data);
-                case 0x14 -> mixState.pluginParameterPage(false);
-                case 0x15 -> mixState.pluginParameterPage(true);
-            }
+            executeGeneralCommand(commandNum, data);
         } else if (command == CMD_ID_PLUGIN) {
-            switch (commandNum) {
-                case 0x1 -> {
-                    ensureInit();
-                    mixState.toPluginMode(getSysExValue(4, data));
-                }
-                case 0x4 -> mixState.navigatePluginBank(getSysExValue(4, data));
-                case 0x7 -> mixState.selectPlugin(getSysExValue(4, data));
-                case 0x9 -> mixState.setPluginLearnMode(getSysExValue(4, data) > 0);
-                case 0xB -> mixState.activateParameter(ParameterSettings.fromData(data));
-                case 0xC -> mixState.activatePlugin(getSysExValue(4, data), getSysExValue(6, data));
-                case 0xD -> mixState.lockDevice(getSysExValue(4, data));
-                case 0x10 -> mixState.selectRemotePage(getSysExValue(4, data));
-                case 0x11 -> mixState.confirmLearned(getSysExValue(4, data), getSysExValue(6, data));
-                case 0x12 -> mixState.toggleRemotePage();
-            }
-            
+            executePluginCommand(commandNum, data);
         } else if (command == CMD_ID_MIXER) {
-            switch (commandNum) {
-                case 0x1 -> handleMixerUpdate(data);
-                case 0x2 -> mixState.setTrackControl(getSysExValue(4, data));
-                case 0x5 -> mixState.setMasterControl(getSysExValue(4, data));
-                case 0x6 -> mixState.focusTrackToggle(getSysExIntValue(4, data));
-                case 0x7 -> mixState.sendTrackNameRequest(getSysExValue(4, data));
+            executeMixerCommand(commandNum, data);
+        }
+    }
+    
+    private void executePluginCommand(final int commandNum, final String data) {
+        switch (commandNum) {
+            case 0x1 -> {
+                ensureInit();
+                mixState.toPluginMode(getSysExValue(4, data));
             }
+            case 0x4 -> mixState.navigatePluginBank(getSysExValue(4, data));
+            case 0x7 -> mixState.selectPlugin(getSysExValue(4, data));
+            case 0x9 -> mixState.setPluginLearnMode(getSysExValue(4, data) > 0);
+            case 0xB -> mixState.activateParameter(ParameterSettings.fromData(data));
+            case 0xC -> mixState.activatePlugin(getSysExValue(4, data), getSysExValue(6, data));
+            case 0xD -> mixState.lockDevice(getSysExValue(4, data));
+            case 0x10 -> mixState.selectRemotePage(getSysExValue(4, data));
+            case 0x11 -> mixState.confirmLearned(getSysExValue(4, data), getSysExValue(6, data));
+            case 0x12 -> mixState.toggleRemotePage();
+        }
+    }
+    
+    private void executeGeneralCommand(final int commandNum, final String data) {
+        switch (commandNum) {
+            case 0x6 -> mixState.setTrackOffset(getSysExIntValue(4, data));
+            case 0x9 -> mixState.selectTrack(getSysExIntValue(4, data));
+            case 0xA -> {
+                ensureInit();
+                mixState.toTransportMode();
+            }
+            case 0xC -> sendGeneralCommandDirect("0D");
+            case 0xE -> handleVersionInfo(data);
+            case 0x14 -> mixState.pluginParameterPage(false);
+            case 0x15 -> mixState.pluginParameterPage(true);
+        }
+    }
+    
+    private void executeMixerCommand(final int commandNum, final String data) {
+        switch (commandNum) {
+            case 0x1 -> handleMixerUpdate(data);
+            case 0x2 -> mixState.setTrackControl(getSysExValue(4, data));
+            case 0x5 -> mixState.setMasterControl(getSysExValue(4, data));
+            case 0x6 -> mixState.focusTrackToggle(getSysExIntValue(4, data));
+            case 0x7 -> mixState.sendTrackNameRequest(getSysExValue(4, data));
         }
     }
     
@@ -361,20 +373,19 @@ public class MidiProcessor {
         midiOut.sendSysex(COMMAND_VALUE_GENERAL_DIR.formatted(code));
     }
     
-    public void sendGeneralCommand(final String code, final int commandValue) {
-        final int sendValue = Math.min(127, Math.max(0, commandValue));
-        sendSysEx(COMMAND_VALUE_GENERAL.formatted(code, "%02X".formatted(sendValue)));
-    }
-    
     public void sendIndexCommand(final String code, final int indexValue) {
         final int highValue = (indexValue >> 7) & 0x7f;
         final int lowValue = indexValue & 0x7F;
         sendSysEx(COMMAND_VALUE_GENERAL.formatted(code, "%02X %02X".formatted(highValue, lowValue)));
     }
     
-    public void sendMixCommand(final String code, final int commandValue) {
-        final int sendValue = Math.min(127, Math.max(0, commandValue));
-        sendSysEx(COMMAND_VALUE_MIX.formatted(code, "%02X".formatted(sendValue)));
+    int lastSendUpdate = -1;
+    
+    public void sendSendsUpdate(int nrOfSends) {
+        if (nrOfSends != lastSendUpdate) {
+            sendSysEx(COMMAND_SEND_COUNT.formatted(Math.min(127, Math.max(0, nrOfSends))));
+            lastSendUpdate = nrOfSends;
+        }
     }
     
     public void sendPluginCommand(final String code, final int commandValue) {
@@ -406,6 +417,7 @@ public class MidiProcessor {
             return;
         }
         //RotoControlExtension.showCallLocation(" >> ");
+        //RotoControlExtension.println("     ==>  " + sysExData);
         midiOut.sendSysex(sysExData);
     }
     

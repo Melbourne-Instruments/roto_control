@@ -40,7 +40,6 @@ public abstract class MixLayerSet implements ScrollViewSet {
         final TrackBank trackBank, final EffectTrackSet effectTrackSet) {
         this.states = new ArrayList<>();
         this.trackBank = trackBank;
-        //trackBank.scrollPosition().addValueObserver(this::handleScrollPositionChange);
         this.midiProcessor = midiProcessor;
         this.name = name;
         buttonMuteLayer = new Layer(layers, "MUTE_LAYER_%s".formatted(name));
@@ -96,6 +95,8 @@ public abstract class MixLayerSet implements ScrollViewSet {
     
     @Override
     public void sendStates() {
+        //        RotoControlExtension.println(
+        //            " SEND STATES %s nt=%d fi=%d", getClass().getSimpleName(), numberOfTracks, firstIndex);
         effectTrackSet.sendStates();
         midiProcessor.sendIndexCommand("04", numberOfTracks);
         midiProcessor.sendIndexCommand("05", firstIndex);
@@ -107,11 +108,14 @@ public abstract class MixLayerSet implements ScrollViewSet {
             }
         }
         midiProcessor.endTrackDetail();
+        //RotoControlExtension.println(" ============================ <%s>", getClass().getSimpleName());
     }
     
     public void setTrackOffset(final int position) {
-        this.firstIndex = position;
-        trackBank.scrollPosition().set(this.firstIndex);
+        if (position < numberOfTracks) {
+            this.firstIndex = position;
+            trackBank.scrollPosition().set(this.firstIndex);
+        }
     }
     
     @Override

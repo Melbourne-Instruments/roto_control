@@ -88,7 +88,6 @@ public class MainLayerHandler {
     private DeviceParameterUpdateState macroChangeState = DeviceParameterUpdateState.NONE;
     private DeviceParameterUpdateState pendingDeviceChange = DeviceParameterUpdateState.NONE;
     private int lastSentTrackIndex = -1;
-    private int invokedTrackSelection = -1;
     
     private enum DeviceParameterUpdateState {
         NONE,
@@ -278,7 +277,6 @@ public class MainLayerHandler {
     
     public void selectTrack(final int trackIndex) {
         this.selectedTrackIndex = trackIndex;
-        this.invokedTrackSelection = trackIndex;
         currentMixSet.selectTrack(trackIndex);
     }
     
@@ -305,9 +303,9 @@ public class MainLayerHandler {
         this.currentMixSet = mode == 0 ? mixLayerSet : masterMixSet;
         this.currentMixSet.activateMetering(knobMode.isMixMode());
         midiProcessor.setCcOutBlocked(true);
-        
         currentMixSet.sendStates();
-        sendUpdateFocusTrack(true);
+        //midiProcessor.sendRefreshMixer();
+        sendUpdateFocusTrack(false);  // CHECK: previously on true
         directModeUpdate();
     }
     
@@ -401,7 +399,7 @@ public class MainLayerHandler {
     }
     
     private void handleSendCountChanged(final int sendsCount) {
-        final int maxPage = (sendsCount + 1) / 8;
+        final int maxPage = sendsCount / 8;
         if (focusTrackPage > maxPage) {
             setFocusTrackPage(maxPage);
         }
@@ -477,7 +475,6 @@ public class MainLayerHandler {
             }
             STD_UPDATE_SEQUENCE_MIXER.stream() //
                 .filter(neededUpdate::contains) //
-                //.peek(u -> RotoControlExtension.println(" UPDATE %s", u)) //
                 .forEach(this::doUpdate);
             neededUpdate.clear();
             if (!deferredUpdates.isEmpty()) {
@@ -507,10 +504,14 @@ public class MainLayerHandler {
     }
     
     private void sendUpdates(final ScrollViewSet viewSet, final UpdateType updateType) {
-        if (viewSet.scrollInPlace()) {
+        if (updateType == UpdateType.MIXER_MASTER) {
             viewSet.sendStates();
         } else {
-            deferredUpdates.add(updateType);
+            if (viewSet.scrollInPlace()) {
+                viewSet.sendStates();
+            } else {
+                deferredUpdates.add(updateType);
+            }
         }
     }
     
@@ -523,7 +524,10 @@ public class MainLayerHandler {
     }
     
     private void sendUpdateFocusTrack(final boolean force) {
-        if (selectedTrackIndex >= 0 && (force || selectedTrackIndex != lastSentTrackIndex)) {
+        if (selectedTrackIndex == -1) {
+            return;
+        }
+        if (force || selectedTrackIndex != lastSentTrackIndex) {
             if (cursorTrackState.getName() != null) {
                 midiProcessor.sendSysEx(cursorTrackState.toSysExUpdateSel(selectedTrackIndex));
             }
@@ -532,12 +536,12 @@ public class MainLayerHandler {
     }
     
     private void placeUpdate(final UpdateType... types) {
-        for (UpdateType t : types) {
-            if (!neededUpdate.contains(t)) {
-                RotoControlExtension.println(" ###  %s", t);
-                //RotoControlExtension.showCallLocation(" -------- " + t + " -------- ");
-            }
-        }
+        //        for (UpdateType t : types) {
+        //            if (!neededUpdate.contains(t)) {
+        //                //RotoControlExtension.println(" ###  %s", t);
+        //                //RotoControlExtension.showCallLocation(" -------- " + t + " -------- ");
+        //            }
+        //        }
         Collections.addAll(neededUpdate, types);
     }
     
@@ -557,12 +561,7 @@ public class MainLayerHandler {
         updateSelectedTrack();
         if (inPluginMode) {
             markUpdateRequired(FocusSource.PLUGIN);
-        } else if (allMode == FocusSource.MIXER_MAIN) {
-            if (invokedTrackSelection != pos) {
-                markUpdateRequired(FocusSource.MIXER_MAIN);
-            }
         }
-        invokedTrackSelection = -1;
     }
     
     private void updateControls() {
