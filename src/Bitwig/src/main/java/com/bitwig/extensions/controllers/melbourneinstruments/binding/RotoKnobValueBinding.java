@@ -5,10 +5,10 @@ import com.bitwig.extensions.controllers.melbourneinstruments.value.ValueProxy;
 import com.bitwig.extensions.framework.Binding;
 
 public class RotoKnobValueBinding extends Binding<RotoKnob, ValueProxy> {
-    
     private int lowValue;
     private int highValue;
     private long knobChangeTime;
+    private long knobTouchTime;
     private String displayValue = "";
     
     public RotoKnobValueBinding(final RotoKnob knob, final ValueProxy parameter) {
@@ -24,14 +24,20 @@ public class RotoKnobValueBinding extends Binding<RotoKnob, ValueProxy> {
     private void handleDisplayValueChanged(String displayValue) {
         this.displayValue = displayValue;
         if (isActive()) {
-            getSource().updateParameterValue(displayValue);
+            long time = System.currentTimeMillis();
+            if (time - knobTouchTime < 200 || time - knobChangeTime < 200) {
+                getSource().updateParameterValue(displayValue);
+            }
         }
     }
     
     private void handleTouched(final boolean touched) {
         if (isActive()) {
             getTarget().touched(touched);
-            getSource().placeParameterUpdateDirect(displayValue);
+            if (touched) {
+                knobTouchTime = System.currentTimeMillis();
+                getSource().placeParameterUpdateDirect(displayValue);
+            }
         }
     }
     

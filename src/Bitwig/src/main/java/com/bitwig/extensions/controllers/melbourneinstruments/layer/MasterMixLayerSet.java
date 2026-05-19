@@ -1,5 +1,7 @@
 package com.bitwig.extensions.controllers.melbourneinstruments.layer;
 
+import java.util.List;
+
 import com.bitwig.extensions.controllers.melbourneinstruments.MidiProcessor;
 import com.bitwig.extensions.controllers.melbourneinstruments.binding.RotoKnobValueBinding;
 import com.bitwig.extensions.controllers.melbourneinstruments.binding.SlotMeteringBinding;
@@ -76,6 +78,28 @@ public class MasterMixLayerSet extends MixLayerSet {
         } else {
             masterTrackBank.reapplySlots();
         }
+    }
+    
+    @Override
+    public List<TrackState> getCurrentTrackStates() {
+        if (numberOfTracks - 1 == firstIndex) {
+            return List.of(states.get(0));
+        }
+        return states.stream().filter(TrackState::isExists).toList();
+    }
+    
+    @Override
+    public void sendStates() {
+        //RotoControlExtension.println(" ------------ %d / %d -----------------", firstIndex, numberOfTracks);
+        effectTrackSet.sendStates();
+        midiProcessor.sendIndexCommand("04", numberOfTracks);
+        midiProcessor.sendIndexCommand("05", firstIndex);
+        final List<TrackState> existingStates = getCurrentTrackStates();
+        for (int i = 0; i < existingStates.size(); i++) {
+            final TrackState state = existingStates.get(i);
+            midiProcessor.sendSysEx(state.toSysExUpdate(firstIndex + i));
+        }
+        midiProcessor.endTrackDetail();
     }
     
     @Override

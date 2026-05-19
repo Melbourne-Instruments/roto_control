@@ -335,7 +335,6 @@ public class MidiProcessor {
     private void handleMidiIn(final int status, final int data1, final int data2) {
         if (status == 0xBF) {
             if (ccInsBlocked) {
-                //RotoControlExtension.println(" DEFLECT ");
                 return;
             }
             RotoKnob knob = valueMatcherMap.get(data1);
@@ -416,8 +415,8 @@ public class MidiProcessor {
         if (!initialized) {
             return;
         }
-        //RotoControlExtension.showCallLocation(" >> ");
-        //RotoControlExtension.println("     ==>  " + sysExData);
+        // RotoControlExtension.showCallLocation(" >> ");
+        // RotoControlExtension.println("     ==>  " + sysExData);
         midiOut.sendSysex(sysExData);
     }
     

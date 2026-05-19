@@ -19,7 +19,7 @@ import com.bitwig.extensions.framework.Layers;
 import com.bitwig.extensions.framework.values.BooleanValueObject;
 
 public abstract class MixLayerSet implements ScrollViewSet {
-    private final EffectTrackSet effectTrackSet;
+    protected final EffectTrackSet effectTrackSet;
     private final String name;
     protected TrackBank trackBank;
     protected MidiProcessor midiProcessor;
@@ -93,22 +93,21 @@ public abstract class MixLayerSet implements ScrollViewSet {
         }
     }
     
+    public List<TrackState> getCurrentTrackStates() {
+        return states.stream().filter(TrackState::isExists).toList();
+    }
+    
     @Override
     public void sendStates() {
-        //        RotoControlExtension.println(
-        //            " SEND STATES %s nt=%d fi=%d", getClass().getSimpleName(), numberOfTracks, firstIndex);
         effectTrackSet.sendStates();
         midiProcessor.sendIndexCommand("04", numberOfTracks);
         midiProcessor.sendIndexCommand("05", firstIndex);
-        final List<TrackState> existingStates = states.stream().filter(TrackState::isExists).toList();
+        final List<TrackState> existingStates = getCurrentTrackStates();
         for (int i = 0; i < existingStates.size(); i++) {
             final TrackState state = existingStates.get(i);
-            if (state.exists()) {
-                midiProcessor.sendSysEx(state.toSysExUpdate(firstIndex + i));
-            }
+            midiProcessor.sendSysEx(state.toSysExUpdate(firstIndex + i));
         }
         midiProcessor.endTrackDetail();
-        //RotoControlExtension.println(" ============================ <%s>", getClass().getSimpleName());
     }
     
     public void setTrackOffset(final int position) {

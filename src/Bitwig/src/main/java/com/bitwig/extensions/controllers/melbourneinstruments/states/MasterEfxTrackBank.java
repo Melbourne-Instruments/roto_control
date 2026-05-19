@@ -73,7 +73,14 @@ public class MasterEfxTrackBank {
             return volume;
         }
         
+        private boolean isActive() {
+            return index + scrollOffset < sendCount.get();
+        }
+        
         public void toggleMute() {
+            if (!isActive()) {
+                return;
+            }
             if (index == relativeMasterIndex) {
                 masterTrack.mute().toggle();
             } else {
@@ -82,6 +89,9 @@ public class MasterEfxTrackBank {
         }
         
         public void toggleArm() {
+            if (!isActive()) {
+                return;
+            }
             if (index == relativeMasterIndex) {
                 masterTrack.arm().toggle();
             } else {
@@ -90,6 +100,9 @@ public class MasterEfxTrackBank {
         }
         
         public void toggleSolo() {
+            if (!isActive()) {
+                return;
+            }
             if (index == relativeMasterIndex) {
                 masterTrack.solo().toggleUsingPreferences(false);
             } else {
@@ -98,6 +111,9 @@ public class MasterEfxTrackBank {
         }
         
         private void setVolume(final double value) {
+            if (!isActive()) {
+                return;
+            }
             if (index == relativeMasterIndex) {
                 masterTrack.volume().setImmediately(value);
             } else {
@@ -106,6 +122,9 @@ public class MasterEfxTrackBank {
         }
         
         private void touchVolume(final boolean touch) {
+            if (!isActive()) {
+                return;
+            }
             if (index == relativeMasterIndex) {
                 masterTrack.volume().touch(touch);
             } else {
@@ -114,6 +133,9 @@ public class MasterEfxTrackBank {
         }
         
         private void setPan(final double value) {
+            if (!isActive()) {
+                return;
+            }
             if (index == relativeMasterIndex) {
                 masterTrack.pan().setImmediately(value);
             } else {
@@ -122,6 +144,9 @@ public class MasterEfxTrackBank {
         }
         
         private void touchPan(final boolean touch) {
+            if (!isActive()) {
+                return;
+            }
             if (index == relativeMasterIndex) {
                 masterTrack.pan().touch(touch);
             } else {
@@ -130,12 +155,18 @@ public class MasterEfxTrackBank {
         }
         
         private void setSend(final double value) {
+            if (!isActive()) {
+                return;
+            }
             if (index != relativeMasterIndex) {
                 effectTrackBank.getItemAt(index).sendBank().getItemAt(0).setImmediately(value);
             }
         }
         
         private void touchSend(final boolean touch) {
+            if (!isActive()) {
+                return;
+            }
             if (index != relativeMasterIndex) {
                 effectTrackBank.getItemAt(index).sendBank().getItemAt(0).touch(touch);
             }
@@ -183,7 +214,7 @@ public class MasterEfxTrackBank {
     public MasterEfxTrackBank(final RotoViewControl viewControl) {
         sendBank = viewControl.getTrackBank().getItemAt(0).sendBank();
         sendBank.scrollPosition().markInterested();
-        sendBank.itemCount().addValueObserver(count -> sendCount.set(count));
+        sendBank.itemCount().addValueObserver(count -> sendCount.set(count + 1));
         
         for (int i = 0; i < 8; i++) {
             trackSlots.add(new TrackSlot(i));

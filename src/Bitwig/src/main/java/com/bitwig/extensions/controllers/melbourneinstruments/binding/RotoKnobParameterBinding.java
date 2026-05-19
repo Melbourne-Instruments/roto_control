@@ -61,7 +61,7 @@ public class RotoKnobParameterBinding extends Binding<RotoKnob, Parameter> {
     }
     
     private void handleTouched(final boolean touched) {
-        if (isActive()) {
+        if (isActive() && exists) {
             getTarget().touch(touched);
             if (!touched) {
                 knobChangeTime = System.currentTimeMillis();
