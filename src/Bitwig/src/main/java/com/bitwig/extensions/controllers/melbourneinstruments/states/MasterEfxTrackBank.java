@@ -220,7 +220,7 @@ public class MasterEfxTrackBank {
     public MasterEfxTrackBank(final RotoViewControl viewControl) {
         sendBank = viewControl.getTrackBank().getItemAt(0).sendBank();
         sendBank.scrollPosition().markInterested();
-        sendBank.itemCount().addValueObserver(count -> sendCount.set(count + 1));
+        sendBank.itemCount().addValueObserver(count -> sendCount.set(count));
         
         for (int i = 0; i < 8; i++) {
             trackSlots.add(new TrackSlot(i));
