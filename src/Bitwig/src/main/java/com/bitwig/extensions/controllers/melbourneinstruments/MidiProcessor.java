@@ -42,6 +42,7 @@ public class MidiProcessor {
     private static final String COMMAND_VALUE_PLUGIN = HEADER + "0B %s %s F7";
     private static final String COMMAND_VALUE_PLUGIN_UPDATE = HEADER + "0B 08 %02X %02X %02X F7";
     private static final String COMMAND_SEND_COUNT = HEADER + "0C 03 %02X F7";
+    private static final String COMMAND_VU_ACTIVATION = HEADER + "0C 0C %s F7";
     //private static final String COMMAND_REFRESH_MIX = HEADER + "0C 09 F7";
     
     private final ControllerHost host;
@@ -52,6 +53,7 @@ public class MidiProcessor {
     private boolean ccInsBlocked = false;
     private long inBlockTime = 0L;
     private boolean initialized = false;
+    int lastUpdateOnSendsNumber = -1;
     
     private final Map<Integer, RotoKnob> valueMatcherMap = new HashMap<>();
     private final Map<Integer, RotoKnob> valueMatcherBase2Map = new HashMap<>();
@@ -378,12 +380,18 @@ public class MidiProcessor {
         sendSysEx(COMMAND_VALUE_GENERAL.formatted(code, "%02X %02X".formatted(highValue, lowValue)));
     }
     
-    int lastSendUpdate = -1;
+    public void sendVuActivation(boolean[] data) {
+        StringBuilder sb = new StringBuilder();
+        for (boolean active : data) {
+            sb.append(active ? "01 " : "00 ");
+        }
+        sendSysEx(COMMAND_VU_ACTIVATION.formatted(sb.toString()));
+    }
     
     public void sendSendsUpdate(int nrOfSends) {
-        if (nrOfSends != lastSendUpdate) {
+        if (nrOfSends != lastUpdateOnSendsNumber) {
             sendSysEx(COMMAND_SEND_COUNT.formatted(Math.min(127, Math.max(0, nrOfSends))));
-            lastSendUpdate = nrOfSends;
+            lastUpdateOnSendsNumber = nrOfSends;
         }
     }
     

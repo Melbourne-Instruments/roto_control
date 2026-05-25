@@ -50,7 +50,7 @@ public class MainLayerHandler {
     private final static List<UpdateType> STD_UPDATE_SEQUENCE_MIXER =
         List.of(
             UpdateType.MIXER_MASTER, UpdateType.MIXER_MAIN, UpdateType.SENDS_COUNT, UpdateType.PLUGIN,
-            UpdateType.SELECTION, UpdateType.UPDATE_CONTROLS);
+            UpdateType.SELECTION, UpdateType.UPDATE_CONTROLS, UpdateType.VU_UPDATE_MIXER, UpdateType.VU_UPDATE_MASTER);
     
     private final MidiProcessor midiProcessor;
     private final Layer transportLayerLayer;
@@ -108,9 +108,8 @@ public class MainLayerHandler {
         final Application application) {
         final MasterEfxTrackBank masterFxTrackBank = new MasterEfxTrackBank(viewControl);
         effectTrackSet = new EffectTrackSet(viewControl.getCursorTrack(), masterFxTrackBank, midiProcessor, trackMode);
-        this.mixLayerSet =
-            new MainMixLayerSet(layers, midiProcessor, "MAIN", viewControl.getTrackBank(), effectTrackSet);
-        this.masterMixSet = new MasterMixLayerSet(layers, midiProcessor, "MASTER", masterFxTrackBank, effectTrackSet);
+        this.mixLayerSet = new MainMixLayerSet(layers, this, "MAIN", viewControl.getTrackBank(), effectTrackSet);
+        this.masterMixSet = new MasterMixLayerSet(layers, this, "MASTER", masterFxTrackBank, effectTrackSet);
         application.projectName().addValueObserver(projectName -> unlockDeviceAndTrack(viewControl.getCursorDevice()));
         cursorTrackMeterLayer = new Layer(layers, "CURSOR_METER_LAYER");
         currentMixSet = this.mixLayerSet;
@@ -173,10 +172,8 @@ public class MainLayerHandler {
                     viewControl.getTouchAutomationActive()));
         }
         
-        mixLayerSet.bind(
-            buttons, knobs, () -> markUpdateRequired(FocusSource.MIXER_MAIN), viewControl.getTouchAutomationActive());
-        masterMixSet.bind(
-            buttons, knobs, () -> markUpdateRequired(FocusSource.MIXER_MASTER), viewControl.getTouchAutomationActive());
+        mixLayerSet.bind(buttons, knobs, viewControl.getTouchAutomationActive());
+        masterMixSet.bind(buttons, knobs, viewControl.getTouchAutomationActive());
         bindCursorTrack(cursorTrack, knobs, viewControl.getTouchAutomationActive());
         masterFxTrackBank.getSendCount().addValueObserver(this::handleSendCountChanged);
         cursorTrack.name().addValueObserver(name -> {
@@ -195,6 +192,10 @@ public class MainLayerHandler {
         cursorTrackPosition.addValueObserver(this::setCursorTrackIndex);
         cursorTrack.isPinned().markInterested();
         masterFxTrackBank.getMasterSelected().addValueObserver(this::handleMasterSelected);
+    }
+    
+    public MidiProcessor getMidiProcessor() {
+        return midiProcessor;
     }
     
     private void bindTrackPositionBind(final TrackBank trackBank, final CursorTrack cursorTrack,
@@ -492,6 +493,8 @@ public class MainLayerHandler {
             case MIXER_MASTER -> sendUpdates(masterMixSet, UpdateType.MIXER_MASTER);
             case PLUGIN -> sendUpdates(pluginModeHandler, UpdateType.PLUGIN);
             case UPDATE_CONTROLS -> updateControls();
+            case VU_UPDATE_MIXER -> midiProcessor.sendVuActivation(mixLayerSet.getActivationState());
+            case VU_UPDATE_MASTER -> midiProcessor.sendVuActivation(masterMixSet.getActivationState());
         }
     }
     
@@ -535,13 +538,14 @@ public class MainLayerHandler {
         }
     }
     
+    public void updateVuActivation(final FocusSource focusSource) {
+        if (allMode == focusSource) {
+            placeUpdate(
+                focusSource == FocusSource.MIXER_MAIN ? UpdateType.VU_UPDATE_MIXER : UpdateType.VU_UPDATE_MASTER);
+        }
+    }
+    
     private void placeUpdate(final UpdateType... types) {
-        //        for (UpdateType t : types) {
-        //            if (!neededUpdate.contains(t)) {
-        //                //RotoControlExtension.println(" ###  %s", t);
-        //                //RotoControlExtension.showCallLocation(" -------- " + t + " -------- ");
-        //            }
-        //        }
         Collections.addAll(neededUpdate, types);
     }
     
@@ -680,4 +684,6 @@ public class MainLayerHandler {
     public void pluginParameterPage(final boolean right) {
         resetParameter();
     }
+    
+    
 }

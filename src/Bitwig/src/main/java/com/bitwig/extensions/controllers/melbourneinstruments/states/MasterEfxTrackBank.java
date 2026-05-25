@@ -37,6 +37,7 @@ public class MasterEfxTrackBank {
         private final BooleanValueObject arm = new BooleanValueObject();
         private final BasicStringValue name = new BasicStringValue();
         private final BasicIntegerValue color = new BasicIntegerValue();
+        private final BooleanValueObject vuActive = new BooleanValueObject();
         private final ValueProxy volume = new ValueProxy();
         private final ValueProxy pan = new ValueProxy();
         private final ValueProxy send = new ValueProxy();
@@ -63,6 +64,10 @@ public class MasterEfxTrackBank {
         
         public BooleanValueObject getSolo() {
             return solo;
+        }
+        
+        public BooleanValueObject getVuActive() {
+            return vuActive;
         }
         
         public ValueProxy getPan() {
@@ -204,6 +209,7 @@ public class MasterEfxTrackBank {
             this.name.set(track.name().get());
             this.exists.set(track.exists().get());
             this.color.set(ColorUtil.toColor(track.color().get()));
+            this.vuActive.set(track.solo().get() || (!track.mute().get() && !track.isMutedBySolo().get()));
         }
         
         public ValueProxy getSend() {
@@ -242,9 +248,17 @@ public class MasterEfxTrackBank {
         track.addVuMeterObserver(
             MeteringBinding.METERING_MAX + 1, 1, false,
             vuValue -> getSlot(index).ifPresent(slot -> slot.getVuMeterRight().set(vuValue)));
-        track.mute().addValueObserver(mute -> getSlot(index).ifPresent(slot -> slot.getMute().set(mute)));
+        track.mute().addValueObserver(mute -> getSlot(index).ifPresent(slot -> {
+            slot.getVuActive().set(track.solo().get() || (!mute && !track.isMutedBySolo().get()));
+            slot.getMute().set(mute);
+        }));
+        track.isMutedBySolo().addValueObserver(muteBySolo -> getSlot(index).ifPresent(
+            slot -> slot.getVuActive().set(track.solo().get() || (!track.mute().get() && !muteBySolo))));
         track.arm().addValueObserver(arm -> getSlot(index).ifPresent(slot -> slot.getArm().set(arm)));
-        track.solo().addValueObserver(solo -> getSlot(index).ifPresent(slot -> slot.getSolo().set(solo)));
+        track.solo().addValueObserver(solo -> getSlot(index).ifPresent(slot -> {
+            slot.getVuActive().set(solo || (!track.mute().get() && !track.isMutedBySolo().get()));
+            slot.getSolo().set(solo);
+        }));
         track.volume().value().addValueObserver(value -> getSlot(index).ifPresent(slot -> slot.getVolume().set(value)));
         track.volume().displayedValue()
             .addValueObserver(value -> getSlot(index).ifPresent(slot -> slot.getVolume().setDisplayValue(value)));

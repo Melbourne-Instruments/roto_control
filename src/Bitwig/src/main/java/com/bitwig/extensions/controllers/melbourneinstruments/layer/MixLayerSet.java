@@ -6,6 +6,7 @@ import java.util.List;
 import com.bitwig.extension.controller.api.Send;
 import com.bitwig.extension.controller.api.Track;
 import com.bitwig.extension.controller.api.TrackBank;
+import com.bitwig.extensions.controllers.melbourneinstruments.MainLayerHandler;
 import com.bitwig.extensions.controllers.melbourneinstruments.MidiProcessor;
 import com.bitwig.extensions.controllers.melbourneinstruments.binding.RotoKnobParameterBinding;
 import com.bitwig.extensions.controllers.melbourneinstruments.control.RotoButton;
@@ -13,16 +14,17 @@ import com.bitwig.extensions.controllers.melbourneinstruments.control.RotoKnob;
 import com.bitwig.extensions.controllers.melbourneinstruments.states.TrackState;
 import com.bitwig.extensions.controllers.melbourneinstruments.value.ButtonMode;
 import com.bitwig.extensions.controllers.melbourneinstruments.value.ColorUtil;
+import com.bitwig.extensions.controllers.melbourneinstruments.value.FocusSource;
 import com.bitwig.extensions.controllers.melbourneinstruments.value.KnobMode;
 import com.bitwig.extensions.framework.Layer;
 import com.bitwig.extensions.framework.Layers;
 import com.bitwig.extensions.framework.values.BooleanValueObject;
 
 public abstract class MixLayerSet implements ScrollViewSet {
+    protected final MainLayerHandler layerHandler;
     protected final EffectTrackSet effectTrackSet;
     private final String name;
     protected TrackBank trackBank;
-    protected MidiProcessor midiProcessor;
     
     protected final List<TrackState> states;
     protected final Layer meteringLayer;
@@ -35,12 +37,14 @@ public abstract class MixLayerSet implements ScrollViewSet {
     
     protected int numberOfTracks;
     protected int firstIndex;
+    protected boolean[] activationState = new boolean[8];
     
-    public MixLayerSet(final Layers layers, final MidiProcessor midiProcessor, final String name,
+    public MixLayerSet(final Layers layers, final MainLayerHandler layerHandler, final String name,
         final TrackBank trackBank, final EffectTrackSet effectTrackSet) {
         this.states = new ArrayList<>();
         this.trackBank = trackBank;
-        this.midiProcessor = midiProcessor;
+        //this.midiProcessor = layerHandler.getMidiProcessor();
+        this.layerHandler = layerHandler;
         this.name = name;
         buttonMuteLayer = new Layer(layers, "MUTE_LAYER_%s".formatted(name));
         buttonSoloLayer = new Layer(layers, "SOLO_LAYER_%s".formatted(name));
@@ -61,6 +65,10 @@ public abstract class MixLayerSet implements ScrollViewSet {
         if (location >= 0 && location < 8) {
             trackBank.getItemAt(location).isGroupExpanded().toggle();
         }
+    }
+    
+    public boolean[] getActivationState() {
+        return activationState;
     }
     
     public void bindKnobsVolumePan(final RotoKnob knob, final Track track,
@@ -99,6 +107,7 @@ public abstract class MixLayerSet implements ScrollViewSet {
     
     @Override
     public void sendStates() {
+        final MidiProcessor midiProcessor = layerHandler.getMidiProcessor();
         effectTrackSet.sendStates();
         midiProcessor.sendIndexCommand("04", numberOfTracks);
         midiProcessor.sendIndexCommand("05", firstIndex);
@@ -108,6 +117,7 @@ public abstract class MixLayerSet implements ScrollViewSet {
             midiProcessor.sendSysEx(state.toSysExUpdate(firstIndex + i));
         }
         midiProcessor.endTrackDetail();
+        midiProcessor.sendVuActivation(activationState);
     }
     
     public void setTrackOffset(final int position) {
@@ -168,26 +178,26 @@ public abstract class MixLayerSet implements ScrollViewSet {
         };
     }
     
-    protected void bindToTrackState(final int index, final Track track, final Runnable updateCall) {
+    protected void bindToTrackState(final int index, final Track track) {
         track.isGroup().addValueObserver(isGroup -> {
             setTrackGroup(index, isGroup);
-            updateCall.run();
+            layerHandler.markUpdateRequired(FocusSource.MIXER_MAIN);
         });
         track.exists().addValueObserver(exist -> setTrackExists(index, exist));
         track.name().addValueObserver(name -> {
             setName(index, name);
-            updateCall.run();
+            layerHandler.markUpdateRequired(FocusSource.MIXER_MAIN);
         });
         track.color().addValueObserver((r, g, b) -> {
             setColor(index, ColorUtil.toColor(r, g, b));
-            updateCall.run();
+            layerHandler.markUpdateRequired(FocusSource.MIXER_MAIN);
         });
     }
     
     
     public abstract void selectTrack(final int trackIndex);
     
-    public abstract void bind(final RotoButton[] buttons, final RotoKnob[] knobs, final Runnable updateCall,
+    public abstract void bind(final RotoButton[] buttons, final RotoKnob[] knobs,
         BooleanValueObject touchAutomationActive);
     
     public void activateMetering(boolean active) {

@@ -2,38 +2,48 @@ package com.bitwig.extensions.controllers.melbourneinstruments.layer;
 
 import java.util.List;
 
-import com.bitwig.extensions.controllers.melbourneinstruments.MidiProcessor;
+import com.bitwig.extensions.controllers.melbourneinstruments.MainLayerHandler;
 import com.bitwig.extensions.controllers.melbourneinstruments.binding.RotoKnobValueBinding;
 import com.bitwig.extensions.controllers.melbourneinstruments.binding.SlotMeteringBinding;
 import com.bitwig.extensions.controllers.melbourneinstruments.control.RotoButton;
 import com.bitwig.extensions.controllers.melbourneinstruments.control.RotoKnob;
 import com.bitwig.extensions.controllers.melbourneinstruments.states.MasterEfxTrackBank;
 import com.bitwig.extensions.controllers.melbourneinstruments.states.TrackState;
+import com.bitwig.extensions.controllers.melbourneinstruments.value.FocusSource;
 import com.bitwig.extensions.framework.Layers;
 import com.bitwig.extensions.framework.values.BooleanValueObject;
 
 public class MasterMixLayerSet extends MixLayerSet {
     private final MasterEfxTrackBank masterTrackBank;
     
-    public MasterMixLayerSet(final Layers layers, final MidiProcessor midiProcessor, final String name,
+    public MasterMixLayerSet(final Layers layers, final MainLayerHandler layerHandler, final String name,
         final MasterEfxTrackBank masterTrackBank, final EffectTrackSet effectTrackSet) {
-        super(layers, midiProcessor, name, masterTrackBank.getEffectTrackBank(), effectTrackSet);
+        super(layers, layerHandler, name, masterTrackBank.getEffectTrackBank(), effectTrackSet);
         this.masterTrackBank = masterTrackBank;
     }
     
-    public void bind(final RotoButton[] buttons, final RotoKnob[] knobs, final Runnable updateCall,
+    public void bind(final RotoButton[] buttons, final RotoKnob[] knobs,
         final BooleanValueObject touchAutomationActive) {
         trackBank.itemCount().addValueObserver(count -> {
             setTrackNumber(count + 1);
-            updateCall.run();
+            layerHandler.markUpdateRequired(FocusSource.MIXER_MASTER);
         });
         
         for (int i = 0; i < 8; i++) {
+            int index = i;
             final MasterEfxTrackBank.TrackSlot slot = masterTrackBank.getTrackSlots().get(i);
-            this.meteringLayer.addBinding(new SlotMeteringBinding(i, slot, midiProcessor));
+            this.meteringLayer.addBinding(new SlotMeteringBinding(i, slot, layerHandler.getMidiProcessor()));
             bindButtons(buttons[i], slot);
             bindKnobs(knobs[i], slot);
-            bindToTrackState(i, slot, updateCall);
+            bindToTrackState(i, slot);
+            slot.getVuActive().addValueObserver(active -> handleVuActivation(index, active));
+        }
+    }
+    
+    private void handleVuActivation(int index, final boolean active) {
+        if (active != activationState[index]) {
+            activationState[index] = active;
+            layerHandler.updateVuActivation(FocusSource.MIXER_MASTER);
         }
     }
     
@@ -44,16 +54,15 @@ public class MasterMixLayerSet extends MixLayerSet {
         this.states.add(new TrackState());
     }
     
-    protected void bindToTrackState(final int index, final MasterEfxTrackBank.TrackSlot slot,
-        final Runnable updateCall) {
+    protected void bindToTrackState(final int index, final MasterEfxTrackBank.TrackSlot slot) {
         slot.exists().addValueObserver(exist -> setTrackExists(index, exist));
         slot.name().addValueObserver(name -> {
             setName(index, name);
-            updateCall.run();
+            layerHandler.markUpdateRequired(FocusSource.MIXER_MASTER);
         });
         slot.color().addValueObserver(colorIndex -> {
             setColor(index, colorIndex);
-            updateCall.run();
+            layerHandler.markUpdateRequired(FocusSource.MIXER_MASTER);
         });
     }
     
@@ -86,20 +95,6 @@ public class MasterMixLayerSet extends MixLayerSet {
             return List.of(states.get(0));
         }
         return states.stream().filter(TrackState::isExists).toList();
-    }
-    
-    @Override
-    public void sendStates() {
-        //RotoControlExtension.println(" ------------ %d / %d -----------------", firstIndex, numberOfTracks);
-        effectTrackSet.sendStates();
-        midiProcessor.sendIndexCommand("04", numberOfTracks);
-        midiProcessor.sendIndexCommand("05", firstIndex);
-        final List<TrackState> existingStates = getCurrentTrackStates();
-        for (int i = 0; i < existingStates.size(); i++) {
-            final TrackState state = existingStates.get(i);
-            midiProcessor.sendSysEx(state.toSysExUpdate(firstIndex + i));
-        }
-        midiProcessor.endTrackDetail();
     }
     
     @Override

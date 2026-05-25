@@ -26,11 +26,11 @@ public class RotoControlExtensionDefinition extends ControllerExtensionDefinitio
     
     @Override
     public String getVersion() {
-        return "0.1.02";
+        return "1.0.1";
     }
     
     public String getVersionDate() {
-        return "20-04-26";
+        return "20-05-26";
     }
     
     @Override

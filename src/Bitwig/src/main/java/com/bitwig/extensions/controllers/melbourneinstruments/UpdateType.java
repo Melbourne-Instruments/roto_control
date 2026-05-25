@@ -7,5 +7,7 @@ public enum UpdateType {
     MIXER_MASTER,
     MIXER_MAIN,
     PLUGIN,
-    UPDATE_CONTROLS
+    UPDATE_CONTROLS,
+    VU_UPDATE_MIXER,
+    VU_UPDATE_MASTER
 }

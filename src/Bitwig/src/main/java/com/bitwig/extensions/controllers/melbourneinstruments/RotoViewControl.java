@@ -5,7 +5,6 @@ import java.util.Arrays;
 import com.bitwig.extension.controller.api.ControllerHost;
 import com.bitwig.extension.controller.api.CursorRemoteControlsPage;
 import com.bitwig.extension.controller.api.CursorTrack;
-import com.bitwig.extension.controller.api.Device;
 import com.bitwig.extension.controller.api.DeviceBank;
 import com.bitwig.extension.controller.api.MasterTrack;
 import com.bitwig.extension.controller.api.PinnableCursorDevice;
@@ -39,15 +38,14 @@ public class RotoViewControl {
     public RotoViewControl(final ControllerHost host, final Transport transport) {
         rootTrack = host.getProject().getRootTrackGroup();
         trackBank = host.createMainTrackBank(8, 1, 1);
+        //        trackBank.setContentFilter(TrackBankContentFilter.ALL_VISIBLE_CHANNELS);
+        //        trackBank.setSupportsDeviceChainChannels(true);
         effectBank = host.createEffectTrackBank(8, 1, 1);
         masterTrack = host.createMasterTrack(1);
         cursorTrack = host.createCursorTrack(14, 1);
         
-        //trackBank.followCursorTrack(cursorTrack);
         cursorDevice = cursorTrack.createCursorDevice();
-        //cursorDevice.setCanPointAtTrackControlsDevice(true);
         deviceBank = cursorDevice.deviceChain().createDeviceBank(8);
-        //deviceBank.setShouldIncludeTrackControlsDevices(true);
         
         //deviceRemotes = cursorDevice.createCursorRemoteControlsPage("DEVICE", 8, null);
         deviceRemotes = cursorDevice.createCursorRemoteControlsPage(8);
@@ -76,22 +74,12 @@ public class RotoViewControl {
                 transport.isClipLauncherAutomationWriteEnabled().get()));
         transport.isClipLauncherAutomationWriteEnabled().addValueObserver(
             overwrite -> handleAutomationChange(
-                transport.automationWriteMode().get(),
-                transport.isArrangerAutomationWriteEnabled().get(), overwrite));
-        //        final LastClickedParameter lastParameter = host.createLastClickedParameter("Xy", "Learn Param");
-        //        lastParameter.parameter().name()
-        //            .addValueObserver(name -> RotoControlExtension.println(" LAST CLICKED %s", name));
-        //        lastParameter.parameter().exists()
-        //            .addValueObserver(exists -> RotoControlExtension.println(" EXist = %s", exists));
-        //        lastParameter.parameter().discreteValueCount()
-        //            .addValueObserver(count -> RotoControlExtension.println(" STESP %d", count));
+                transport.automationWriteMode().get(), transport.isArrangerAutomationWriteEnabled().get(), overwrite));
     }
     
     private void handleAutomationChange(final String mode, final boolean automationOverwrite,
         final boolean clipAutomationOverwrite) {
         touchAutomationActive.set(mode.equals("touch") && (automationOverwrite || clipAutomationOverwrite));
-        //RotoControlExtension.println(
-        //    " %s %s %s = %s", mode, automationOverwrite, clipAutomationOverwrite, touchAutomationActive.get());
     }
     
     public BooleanValueObject getTouchAutomationActive() {
@@ -154,4 +142,4 @@ public class RotoViewControl {
         return deviceRemotes;
     }
     
- }
+}

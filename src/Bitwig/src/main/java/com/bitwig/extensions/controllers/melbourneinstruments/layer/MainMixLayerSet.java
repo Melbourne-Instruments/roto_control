@@ -2,36 +2,55 @@ package com.bitwig.extensions.controllers.melbourneinstruments.layer;
 
 import com.bitwig.extension.controller.api.Track;
 import com.bitwig.extension.controller.api.TrackBank;
-import com.bitwig.extensions.controllers.melbourneinstruments.MidiProcessor;
+import com.bitwig.extensions.controllers.melbourneinstruments.MainLayerHandler;
 import com.bitwig.extensions.controllers.melbourneinstruments.binding.TrackMeteringBinding;
 import com.bitwig.extensions.controllers.melbourneinstruments.control.RotoButton;
 import com.bitwig.extensions.controllers.melbourneinstruments.control.RotoKnob;
+import com.bitwig.extensions.controllers.melbourneinstruments.value.FocusSource;
 import com.bitwig.extensions.framework.Layers;
 import com.bitwig.extensions.framework.values.BooleanValueObject;
 
 public class MainMixLayerSet extends MixLayerSet {
     
-    public MainMixLayerSet(final Layers layers, final MidiProcessor midiProcessor, final String name,
+    public MainMixLayerSet(final Layers layers, final MainLayerHandler layerHandler, final String name,
         final TrackBank trackBank, final EffectTrackSet effectTrackSet) {
-        super(layers, midiProcessor, name, trackBank, effectTrackSet);
+        super(layers, layerHandler, name, trackBank, effectTrackSet);
     }
     
     @Override
-    public void bind(final RotoButton[] buttons, final RotoKnob[] knobs, final Runnable updateCall,
+    public void bind(final RotoButton[] buttons, final RotoKnob[] knobs,
         final BooleanValueObject touchAutomationActive) {
         trackBank.itemCount().addValueObserver(count -> {
             setTrackNumber(count);
-            updateCall.run();
+            layerHandler.markUpdateRequired(FocusSource.MIXER_MAIN);
         });
         for (int i = 0; i < trackBank.getSizeOfBank(); i++) {
+            final int index = i;
             final Track track = trackBank.getItemAt(i);
-            meteringLayer.addBinding(new TrackMeteringBinding(i, track, midiProcessor));
-            bindToTrackState(i, track, updateCall);
+            meteringLayer.addBinding(new TrackMeteringBinding(i, track, layerHandler.getMidiProcessor()));
+            bindToTrackState(i, track);
             bindButtons(buttons[i], track);
             bindKnobs(knobs[i], track, touchAutomationActive);
+            bindMuteSoloState(track, index);
         }
     }
     
+    private void bindMuteSoloState(final Track track, final int index) {
+        track.isMutedBySolo()
+            .addValueObserver(muted -> this.handleMuteState(index, muted, track.mute().get(), track.solo().get()));
+        track.mute().addValueObserver(
+            muted -> this.handleMuteState(index, track.isMutedBySolo().get(), muted, track.solo().get()));
+        track.solo().addValueObserver(
+            soloed -> this.handleMuteState(index, track.isMutedBySolo().get(), track.mute().get(), soloed));
+    }
+    
+    private void handleMuteState(final int index, final boolean muteBySolo, final boolean muted, final boolean soloed) {
+        boolean newState = soloed || (!muted && !muteBySolo);
+        if (newState != activationState[index]) {
+            activationState[index] = soloed || (!muted && !muteBySolo);
+            layerHandler.updateVuActivation(FocusSource.MIXER_MAIN);
+        }
+    }
     
     private void bindButtons(final RotoButton button, final Track track) {
         track.mute().markInterested();
