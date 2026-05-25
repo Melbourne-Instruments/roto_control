@@ -41,9 +41,8 @@ public class MidiProcessor {
     private static final String COMMAND_VALUE_GENERAL = HEADER + "0A %s %s F7";
     private static final String COMMAND_VALUE_PLUGIN = HEADER + "0B %s %s F7";
     private static final String COMMAND_VALUE_PLUGIN_UPDATE = HEADER + "0B 08 %02X %02X %02X F7";
-    private static final String COMMAND_SEND_COUNT = HEADER + "0C 03 %02X F7";
-    private static final String COMMAND_VU_ACTIVATION = HEADER + "0C 0C %s F7";
-    //private static final String COMMAND_REFRESH_MIX = HEADER + "0C 09 F7";
+    private static final MidiCommand COMMAND_VU_ACTIVATION_MSG = new MidiCommand(0xC, 0xC, 8);
+    private static final MidiCommand COMMAND_SEND_COUNT_MSG = new MidiCommand(0xC, 0x3, 1);
     
     private final ControllerHost host;
     private final MidiIn midiIn;
@@ -381,16 +380,16 @@ public class MidiProcessor {
     }
     
     public void sendVuActivation(boolean[] data) {
-        StringBuilder sb = new StringBuilder();
-        for (boolean active : data) {
-            sb.append(active ? "01 " : "00 ");
+        for (int i = 0; i < data.length; i++) {
+            COMMAND_VU_ACTIVATION_MSG.setValue(i, data[i]);
         }
-        sendSysEx(COMMAND_VU_ACTIVATION.formatted(sb.toString()));
+        sendSysEx(COMMAND_VU_ACTIVATION_MSG.getData());
     }
     
     public void sendSendsUpdate(int nrOfSends) {
         if (nrOfSends != lastUpdateOnSendsNumber) {
-            sendSysEx(COMMAND_SEND_COUNT.formatted(Math.min(127, Math.max(0, nrOfSends))));
+            COMMAND_SEND_COUNT_MSG.setValue(Math.min(127, Math.max(0, nrOfSends)));
+            sendSysEx(COMMAND_SEND_COUNT_MSG.getData());
             lastUpdateOnSendsNumber = nrOfSends;
         }
     }
@@ -420,6 +419,16 @@ public class MidiProcessor {
     }
     
     public void sendSysEx(final String sysExData) {
+        if (!initialized) {
+            return;
+        }
+        // RotoControlExtension.showCallLocation(" >> ");
+        // RotoControlExtension.println("     ==>  " + sysExData);
+        midiOut.sendSysex(sysExData);
+    }
+    
+    
+    public void sendSysEx(final byte[] sysExData) {
         if (!initialized) {
             return;
         }
