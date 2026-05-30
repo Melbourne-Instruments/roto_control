@@ -79,7 +79,7 @@ public class MasterEfxTrackBank {
         }
         
         private boolean isActive() {
-            return index + scrollOffset < sendCount.get();
+            return index == relativeMasterIndex || index + scrollOffset < sendCount.get();
         }
         
         public void toggleMute() {
@@ -285,6 +285,7 @@ public class MasterEfxTrackBank {
         }
         this.scrollOffset = pos;
         this.relativeMasterIndex = masterIndex - scrollOffset;
+        
         if (this.effectTrackBank.scrollPosition().get() != this.scrollOffset) {
             this.effectTrackBank.scrollPosition().set(this.scrollOffset);
         }

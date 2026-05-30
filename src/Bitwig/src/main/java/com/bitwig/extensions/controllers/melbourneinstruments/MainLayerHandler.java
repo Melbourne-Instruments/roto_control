@@ -277,6 +277,9 @@ public class MainLayerHandler {
     }
     
     public void selectTrack(final int trackIndex) {
+        if (trackIndex != selectedTrackIndex) {
+            resetParameter();
+        }
         this.selectedTrackIndex = trackIndex;
         currentMixSet.selectTrack(trackIndex);
     }
@@ -561,6 +564,9 @@ public class MainLayerHandler {
         if (pos < 0) {
             return;
         }
+        if (this.selectedTrackIndex != pos) {
+            resetParameter();
+        }
         this.selectedTrackIndex = pos;
         updateSelectedTrack();
         if (inPluginMode) {
@@ -649,6 +655,7 @@ public class MainLayerHandler {
     }
     
     public void selectPlugin(final int index) {
+        resetParameter();
         pluginModeHandler.selectPlugin(index);
         pendingDeviceChange = DeviceParameterUpdateState.CHANGE_INVOKED;
     }
