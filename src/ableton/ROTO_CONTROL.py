@@ -22,8 +22,10 @@ from ableton.v2.base import listens, listens_group, liveobj_valid
 import hashlib
 import sys
 from time import sleep, time
+import re
+from itertools import islice
 
-VERSION = '2.1.0'
+VERSION = '3.2.0'
 
 # Log output control
 LOG_OFF = 1000
@@ -64,6 +66,9 @@ SELECT_TRACK = 0x9
 REQUEST_TRANSPORT_STATUS = 0xA
 TRANSPORT_STATUS = 0xB
 ROTO_DAW_CONNECTED = 0xC
+ROTO_PAGE_LEFT = 0x14
+ROTO_PAGE_RIGHT = 0x15
+PARAM_VALUES = 0x18
 
 # Plugin commands
 SET_PLUGIN_MODE = 0x1
@@ -89,6 +94,8 @@ NUM_SENDS = 0x3
 DAW_SELECT_TRACK = 0x4
 SET_MIXER_CHANNEL_MODE = 0x5
 TOGGLE_GROUP_TRACK = 0x6
+SET_MIX_VU_METER_POINTS = 0xB
+SET_MIX_VU_METER_STATES = 0xC
 
 # Constants
 MAX_QUANTISED_STEPS = 24
@@ -102,6 +109,17 @@ PARAM_HASH_NO_OVERRIDE = 0xFFFFFFFF
 MACRO_PLUGIN_PAGES = 0
 MACRO_FORCE_PLUGIN = 0
 HAPTIC_CENTER_INDENT = 0
+TOUCH_FIRST_CC = 52
+DEFAULT_VOLUME_CC = 64
+METERS_FIRST_CC = 65
+VALUE_UPDATE_FPS = 12
+VALUE_UPDATE_PERIOD = 1.0 / VALUE_UPDATE_FPS
+AUDIO_METER_FPS = 12
+AUDIO_METER_UPDATE_PERIOD = 1.0 / AUDIO_METER_FPS
+LEFT_CHANNEL = 0
+RIGHT_CHANNEL = 1
+METER_LEVEL_YELLOW = 87
+METER_LEVEL_RED = 113
 
 UNIQUE_DEVICE_CLASS_NAMES = [
  'InstrumentGroupDevice',
@@ -143,16 +161,18 @@ class RotoControl(ControlSurface):
             self._midi_channel = MIDI_CHANNEL
             self._midi_first_cc = MIDI_FIRST_CC
             self._encoder_cc_list = []
-            self ._button_cc_list = []
+            self._button_cc_list = []
+            self._touch_cc_list = []
             self._button_list = []
             self._encoder_list = []
+            self._touch_event_list = []
             self._transport_button_cc_list = []
             # Variables to be set by sysex messages sent from device
             self._plugin_first_device = 0
             self._mixer_audio_first_track = 0
             self._mixer_master_return_first_track = 0
-            self._mixer_encoder_mode = 'LEVEL'
-            self._mixer_button_mode = 'MUTE'
+            self._mixer_encoder_mode = None
+            self._mixer_button_mode = None
             self._mixer_send_index = 0
             self._mixer_selected_mode_page_index = 0
             self._selected_device_index = 0
@@ -173,6 +193,7 @@ class RotoControl(ControlSurface):
             self._selected_track_mode = 'AUDIO'
             self._is_active_start_time = 0
             self._select_device_start_time = 0
+            self._meter_update_enabled = False
             self._expanded_devices_list = []
             self._mute_value_listener_list = {}
             self._mute_listener_list = []
@@ -183,10 +204,18 @@ class RotoControl(ControlSurface):
             self._update_listener_track_list = []
             self._last_detail_change_track_list = []
             self._detail_change_device_list = []
-            self._timer_interval = 5        # Set timer interval (5 ticks = 0.5 second)
+            self._group_track_timer_interval = 5        # Set timer interval (5 ticks = 0.5 second)
             self._visible_track_mask = 0
             self._current_track_mask = 0
             self._touch_override = False
+            self._value_change_time = [0] * (NUM_ENCODERS * 2)
+            self._audio_meter_change_time = [0] * (NUM_ENCODERS * 2)
+            self._latest_value_param = [None] * (NUM_ENCODERS * 2)
+            self._max_output_meter_values = [0] * (NUM_ENCODERS * 2)
+            self._param_value_listener_list = {}
+            self._audio_meter_listener_list = {}
+            self._mute_value_list = {}
+            self._solo_value_list = {}
             self._setup_control_surface()
             self._setup_buttons()
             self._setup_encoders()
@@ -206,16 +235,20 @@ class RotoControl(ControlSurface):
             self._encoder_cc_list.append(self._midi_first_cc + ix)
             self._button_cc_list.append(self._midi_first_cc + NUM_ENCODERS + ix)
             self._transport_button_cc_list.append(self._midi_first_cc + (NUM_ENCODERS*2) + ix)
+            self._touch_cc_list.append(TOUCH_FIRST_CC + ix)
             self._log_print('_encoder_cc_list[{}]: {}'.format(ix, self._encoder_cc_list[ix]), LOG_VERBOSE)
             self._log_print('_button_cc_list[{}]: {}'.format(ix, self._button_cc_list[ix]), LOG_VERBOSE)
             self._log_print('_transport_button_cc_list[{}]: {}'.format(ix, self._transport_button_cc_list[ix]), LOG_VERBOSE)
-        
+            self._log_print('_touch_cc_list[{}]: {}'.format(ix, self._touch_cc_list[ix]), LOG_VERBOSE)
+
         # Add 2 additional transport controls for arrow keys
         ix = NUM_ENCODERS
         while ix < (NUM_ENCODERS + 2):
             self._transport_button_cc_list.append(self._midi_first_cc + (NUM_ENCODERS*2) + ix)
             self._log_print('_transport_button_cc_list[{}]: {}'.format(ix, self._transport_button_cc_list[ix]), LOG_VERBOSE)
             ix += 1
+
+        self._log_print('DEFAULT_VOLUME_CC: {}'.format(DEFAULT_VOLUME_CC), LOG_VERBOSE)
 
         # Set up fixed CCs for transport and other fixed button definitions
         self._play_button_cc = self._transport_button_cc_list[0]
@@ -230,9 +263,10 @@ class RotoControl(ControlSurface):
         self._ff_button_cc = self._transport_button_cc_list[9]
 
     def _setup_buttons(self):
-        # Create button elements for assignable buttons
+        # Create button elements for assignable buttons and touch events
         for ix in range(NUM_ENCODERS):
             self._button_list.append(ButtonElement(True, MIDI_CC_TYPE, self._midi_channel, self._button_cc_list[ix]))
+            self._touch_event_list.append(ButtonElement(True, MIDI_CC_TYPE, self._midi_channel, self._touch_cc_list[ix]))
 
         # Create button elements for static buttons
         self._play_button = ButtonElement(True, MIDI_CC_TYPE, self._midi_channel, self._play_button_cc)
@@ -245,6 +279,7 @@ class RotoControl(ControlSurface):
         self._re_enable_automation_button = ButtonElement(True, MIDI_CC_TYPE, self._midi_channel, self._re_enable_automation_button_cc)
         self._ff_button = ButtonElement(True, MIDI_CC_TYPE, self._midi_channel, self._ff_button_cc)
         self._rw_button = ButtonElement(True, MIDI_CC_TYPE, self._midi_channel, self._rw_button_cc)
+        self._default_volume_event = ButtonElement(True, MIDI_CC_TYPE, self._midi_channel, DEFAULT_VOLUME_CC)
 
         # Set up Transport object and controls.
         self._transport = TransportComponent()
@@ -256,7 +291,14 @@ class RotoControl(ControlSurface):
         self._transport.set_punch_in_button(self._punch_in_button)
         self._transport.set_punch_out_button(self._punch_out_button)
         self._re_enable_automation_button.add_value_listener(self._reenable_automation)
-        self._transport.set_seek_buttons(self._ff_button, self._rw_button)
+
+        # Set up permanent listeners for touch events, play head and default volume
+        for ix in range(NUM_ENCODERS):
+            self._touch_event_list[ix].add_value_listener(self._get_touch_value_listener(ix))
+
+        self._ff_button.add_value_listener(self._ff_playhead_listener)
+        self._rw_button.add_value_listener(self._rw_playhead_listener)
+        self._default_volume_event.add_value_listener(self._default_volume_listener)
 
     def _setup_encoders(self):
         # Create encoder elements for assignable encoders.
@@ -274,9 +316,34 @@ class RotoControl(ControlSurface):
         self._mixer.master_track = self.song().master_track
         self._mixer.return_tracks = self.song().return_tracks
 
-    def _schedule_timer(self):
+    def _setup_meters(self):
+        self._send_sysex(MIXER_COMMAND_GROUP, SET_MIX_VU_METER_POINTS, bytearray([METER_LEVEL_YELLOW, METER_LEVEL_RED]))
+
+    def _schedule_group_track_timer(self):
         self._update_foldable_tracks()
-        self.schedule_message(self._timer_interval, self._schedule_timer)
+        self.schedule_message(self._group_track_timer_interval, self._schedule_group_track_timer)
+
+    def _schedule_value_timer(self, index):
+        self.schedule_message(2, lambda: self._on_value_timer(index))
+
+    def _set_solo_value(self, track, index):
+        solo_value = int(track.solo)
+        # If a group track is soloed, all tracks within the group are visible
+        if track.is_grouped:
+            parent = track.group_track
+
+            if parent.solo:
+                solo_value = 1
+
+        # If a track within a group is soloed, the group track is visible
+        if track.is_foldable:
+            group_tracks = []
+
+            for trk in self._get_track_list():
+                if trk.is_grouped and (trk.group_track == track) and trk.solo:
+                    solo_value = 1
+
+        self._solo_value_list[index] = solo_value
 
     def _update_mixer(self):
         if self._active_mode == 'MIXER':
@@ -295,40 +362,70 @@ class RotoControl(ControlSurface):
 
                 self._clear_mixer_params()
 
+                # Scan entire track list for solos
+                for jx, track in enumerate(track_list):
+                    if track != self.song().master_track:
+                        self._set_solo_value(track, jx)
+
+                        # Add all solo listeners here - we need to listen to all tracks
+                        listener = self._get_solo_state_listener(jx)
+                        track.add_solo_listener(listener)
+                        self._solo_listener_list.append((track, listener))
+
                 for ix in range(NUM_ENCODERS):
                     current_track = self._get_mixer_first_track() + ix 
                     if current_track < total_tracks:
                         self._log_print('Track: {}, Offset: {}'.format(current_track, ix), LOG_VERBOSE)
-                        mixer_device = track_list[current_track].mixer_device
+                        track = track_list[current_track]
+                        mixer_device = track.mixer_device
+                        param = None
 
                         # Set the knob mode
                         if (self._mixer_encoder_mode == 'LEVEL'):
                             self._log_print('Set LEVEL', LOG_VERBOSE)
                             self._encoder_list[ix].connect_to(mixer_device.volume)
+                            param = mixer_device.volume
                         elif (self._mixer_encoder_mode == 'PAN'):
                             self._log_print('Set PAN', LOG_VERBOSE)
                             self._encoder_list[ix].connect_to(mixer_device.panning)
+                            param = mixer_device.panning
                         elif (self._mixer_encoder_mode == 'SEND'):
                             self._log_print('Set SEND', LOG_VERBOSE)
                             if self._mixer_send_index < len(mixer_device.sends):
                                 self._encoder_list[ix].connect_to(mixer_device.sends[self._mixer_send_index])
+                                param = mixer_device.sends[self._mixer_send_index]
+                            elif (len(mixer_device.sends) != 0):
+                                self._mixer_send_index = 0;
+                                self._encoder_list[ix].connect_to(mixer_device.sends[self._mixer_send_index])
+                                param = mixer_device.sends[self._mixer_send_index]
                             else:
                                 # Do nothing if the current track has no sends
                                 self._encoder_list[ix].release_parameter()
-                        else:
-                            self._log_print('Invalid mixer encoder mode: {}'.format(self._mixer_encoder_mode))
+                                param = None
+
+                        # Add the listeners for values display
+                        if param:
+                            self._add_value_listener(param, ix)
+
+                        # Add the listeners for the audio meters
+                        self._add_audio_meter_listeners(track, current_track, ix)
 
                         # Set the button mode
-                        if track_list[current_track] != self.song().master_track:
+                        if track != self.song().master_track:
+                            # Always listen for mutes to update meters state
+                            mute_listener = self._get_mute_state_listener(ix)
+                            track.add_mute_listener(mute_listener)
+                            self._mute_listener_list.append((track, mute_listener))
+
+                            # Update the mute mask
+                            self._mute_value_list[ix] = int(not track.mute)
+
                             if (self._mixer_button_mode == 'MUTE'):
                                 self._log_print('Set MUTE', LOG_VERBOSE)
                                 value_listener = self._get_mute_toggle_listener(ix)
                                 self._button_list[ix].add_value_listener(value_listener)
                                 self._mute_value_listener_list[ix] = value_listener
-                                listener = self._get_mute_state_listener(ix)
-                                track_list[current_track].add_mute_listener(listener)
-                                self._mute_listener_list.append((track_list[current_track], listener))
-                                if track_list[current_track].mute:
+                                if track.mute:
                                     data = bytearray([MIDI_CC_MSG, self._button_cc_list[ix], 127])
                                     self._send_midi(tuple(data))
                                 else:
@@ -339,25 +436,22 @@ class RotoControl(ControlSurface):
                                 value_listener = self._get_solo_toggle_listener(ix)
                                 self._button_list[ix].add_value_listener(value_listener)
                                 self._solo_value_listener_list[ix] = value_listener
-                                listener = self._get_solo_state_listener(ix)
-                                track_list[current_track].add_solo_listener(listener)
-                                self._solo_listener_list.append((track_list[current_track], listener))
-                                if track_list[current_track].solo:
+                                if track.solo:
                                     data = bytearray([MIDI_CC_MSG, self._button_cc_list[ix], 127])
                                     self._send_midi(tuple(data))
                                 else:
                                     data = bytearray([MIDI_CC_MSG, self._button_cc_list[ix], 0])
                                     self._send_midi(tuple(data))
                             elif (self._mixer_button_mode == 'ARM_RECORDING'):
-                                if (self._channel_mode == 'AUDIO') and (track_list[current_track].can_be_armed):
+                                if (self._channel_mode == 'AUDIO') and (track.can_be_armed):
                                     self._log_print('Set ARM RECORDING', LOG_VERBOSE)
                                     value_listener = self._get_arm_toggle_listener(ix)
                                     self._button_list[ix].add_value_listener(value_listener)
                                     self._arm_value_listener_list[ix] = value_listener
                                     listener = self._get_arm_state_listener(ix)
-                                    track_list[current_track].add_arm_listener(listener)
-                                    self._arm_listener_list.append((track_list[current_track], listener))
-                                    if track_list[current_track].arm:
+                                    track.add_arm_listener(listener)
+                                    self._arm_listener_list.append((track, listener))
+                                    if track.arm:
                                         data = bytearray([MIDI_CC_MSG, self._button_cc_list[ix], 127])
                                         self._send_midi(tuple(data))
                                     else:
@@ -366,8 +460,6 @@ class RotoControl(ControlSurface):
                                 else:
                                     data = bytearray([MIDI_CC_MSG, self._button_cc_list[ix], 0])
                                     self._send_midi(tuple(data))
-                            else:
-                                self._log_print('Invalid mixer button mode: {}'.format(self._mixer_button_mode))
                         else:
                             # Clear the master LED
                             if (self._mixer_button_mode == 'MUTE'):
@@ -390,6 +482,7 @@ class RotoControl(ControlSurface):
                         elif (self._mixer_button_mode == 'ARM_RECORDING'):
                             data = bytearray([MIDI_CC_MSG, self._button_cc_list[ix], 0])
                             self._send_midi(tuple(data))
+                self._send_meters_state()
                 self._mixer.set_enabled(True)
 
             elif (self._mixer_mode == 'MODE_SELECTED'):
@@ -405,13 +498,18 @@ class RotoControl(ControlSurface):
                 audio_track_list = self._get_track_list('AUDIO')
                 if self.song().view.selected_track in master_return_track_list:
                     mixer_device = master_return_track_list[self._selected_track_index].mixer_device
+                    track_list = master_return_track_list
                 else:
                     mixer_device = audio_track_list[self._selected_track_index].mixer_device
+                    track_list = audio_track_list
 
                 if self._mixer_selected_mode_page_index == 0:
                     self._encoder_list[0].connect_to(mixer_device.volume)
                     self._encoder_list[1].connect_to(mixer_device.panning)
                     ix = 2
+                    # Add the listeners for values display
+                    self._add_value_listener(mixer_device.volume, 0)
+                    self._add_value_listener(mixer_device.panning, 1)
                 else:
                     first_send = 6 + (self._mixer_selected_mode_page_index - 1) * 8
                 num_sends = len(self.song().view.selected_track.mixer_device.sends)
@@ -419,7 +517,32 @@ class RotoControl(ControlSurface):
                     if jx >= first_send:
                         if ix < NUM_ENCODERS:
                             self._encoder_list[ix].connect_to(mixer_device.sends[jx])
+                            self._add_value_listener(mixer_device.sends[jx], ix)
                         ix += 1
+
+                # Add the listeners for the audio meters
+                self._add_audio_meter_listeners(self.song().view.selected_track, self._selected_track_index, 0)
+
+                # Scan entire track list for solos
+                for jx, track in enumerate(track_list):
+                    if track != self.song().master_track:
+                        self._set_solo_value(track, jx)
+
+                        # Add all solo listeners here - we need to listen to all tracks
+                        listener = self._get_solo_state_listener(jx)
+                        track.add_solo_listener(listener)
+                        self._solo_listener_list.append((track, listener))
+
+                # Add the mute listener for the current track
+                mute_listener = self._get_mute_state_listener(0)
+                self.song().view.selected_track.add_mute_listener(mute_listener)
+                self._mute_listener_list.append((self.song().view.selected_track, mute_listener))
+
+                # Update the mute mask
+                self._mute_value_list[0] = int(not self.song().view.selected_track.mute)
+
+                self._send_meters_state()
+
                 self._mixer.set_enabled(True)
                 self._send_sysex(MIXER_COMMAND_GROUP, NUM_SENDS, bytearray([num_sends]))
                 self._return_tracks()
@@ -455,6 +578,11 @@ class RotoControl(ControlSurface):
             if track in track_list:
                 track.remove_arm_listener(listener)
         self._arm_listener_list = []
+
+        self._clear_value_listeners()
+        self._clear_audio_meter_listeners()
+        self._mute_value_list = {}
+        self._solo_value_list = {}
 
     def _update_devices(self):
         # Show the selected device, if any
@@ -519,15 +647,27 @@ class RotoControl(ControlSurface):
         else:
             self._expanded_devices_list.append(device)
 
+    def _send_led_status(self, index, status, button_mode):
+        if (self._mixer_button_mode == button_mode):
+            if status:
+                data = bytearray([MIDI_CC_MSG, self._button_cc_list[index], 127])
+                self._send_midi(tuple(data))
+            else:
+                data = bytearray([MIDI_CC_MSG, self._button_cc_list[index], 0])
+                self._send_midi(tuple(data))
+
     # Returns a function to toggle the mute state of a specific track based on the button index.
     def _get_mute_toggle_listener(self, index):
         def _on_mute_button_pressed(value):
             # Only toggle if the button is pressed (value > 0)
+            track_list = self._get_track_list()
+            track_offset = self._get_mixer_first_track() + index
+            track = track_list[track_offset]
             if value > 0:
-                track_list = self._get_track_list()
-                track = track_list[self._get_mixer_first_track() + index]
                 current_state = track.mute
                 track.mute = not current_state
+            else:
+                self._send_led_status(index, track.mute, 'MUTE')
 
         return _on_mute_button_pressed
 
@@ -535,22 +675,22 @@ class RotoControl(ControlSurface):
     def _get_mute_state_listener(self, index):
         def _on_mute_state_changed():
             track_list = self._get_track_list()
-            if track_list[self._get_mixer_first_track() + index].mute:
-                data = bytearray([MIDI_CC_MSG, self._button_cc_list[index], 127])
-                self._send_midi(tuple(data))
-            else:
-                data = bytearray([MIDI_CC_MSG, self._button_cc_list[index], 0])
-                self._send_midi(tuple(data))
+            track_offset = self._get_mixer_first_track() + index
+            if self._mixer_mode == 'MODE_SELECTED':
+                track_offset = self._selected_track_index
+            self._mute_value_list[index] = int(not track_list[track_offset].mute)
 
+            self._send_led_status(index, track_list[track_offset].mute, 'MUTE')
+            self._send_meters_state()
         return _on_mute_state_changed
 
     # Returns a function to toggle the solo state of a specific track based on the button index.
     def _get_solo_toggle_listener(self, index):
         def _on_solo_button_pressed(value):
+            track_list = self._get_track_list()
+            track = track_list[self._get_mixer_first_track() + index]
             if value > 0:
                 # Toggle the selected solo
-                track_list = self._get_track_list()
-                track = track_list[self._get_mixer_first_track() + index]
                 current_state = track.solo
                 track.solo = not current_state
 
@@ -575,6 +715,8 @@ class RotoControl(ControlSurface):
                     for ix in range(len(alt_track_list)):
                         if (alt_track_list[ix] != self.song().master_track):
                             alt_track_list[ix].solo = False
+            else:
+                self._send_led_status(index, track.solo, 'SOLO')
 
         return _on_solo_button_pressed
 
@@ -582,37 +724,46 @@ class RotoControl(ControlSurface):
     def _get_solo_state_listener(self, index):
         def _on_solo_state_changed():
             track_list = self._get_track_list()
-            if track_list[self._get_mixer_first_track() + index].solo:
-                data = bytearray([MIDI_CC_MSG, self._button_cc_list[index], 127])
-                self._send_midi(tuple(data))
+            track = track_list[index]
+            # Scan entire track list for group track updates
+            if track.is_foldable or track.group_track:
+                for jx, track in enumerate(track_list):
+                    if track != self.song().master_track:
+                        self._set_solo_value(track, jx)
             else:
-                data = bytearray([MIDI_CC_MSG, self._button_cc_list[index], 0])
-                self._send_midi(tuple(data))
+                self._set_solo_value(track, index)
+
+            if (index >= self._get_mixer_first_track()) and (index < self._get_mixer_first_track() + NUM_ENCODERS):
+                self._send_led_status(index - self._get_mixer_first_track(), track.solo, 'SOLO')
+            self._send_meters_state()
         
         return _on_solo_state_changed
 
     # Returns a function to toggle the arm state of a specific track based on the button index.
     def _get_arm_toggle_listener(self, index):
         def _on_arm_button_pressed(value):
-            if (value > 0) and (self._channel_mode == 'AUDIO'):
-                # Toggle the selected arm
+            if self._channel_mode == 'AUDIO':
                 track_list = self._get_track_list()
                 track = track_list[self._get_mixer_first_track() + index]
-                current_state = track.arm
-                track.arm = not current_state
+                if value > 0:
+                    # Toggle the selected arm
+                    current_state = track.arm
+                    track.arm = not current_state
 
-                # If multiple channels are selected allow group arm by skipping the clear step
-                other_buttons_held = False
-                for ix in range(NUM_ENCODERS):
-                    if (ix != index) and (self._button_list[ix].is_pressed()):
-                        other_buttons_held = True
+                    # If multiple channels are selected allow group arm by skipping the clear step
+                    other_buttons_held = False
+                    for ix in range(NUM_ENCODERS):
+                        if (ix != index) and (self._button_list[ix].is_pressed()):
+                            other_buttons_held = True
 
-                if ((not other_buttons_held) and (self.song().exclusive_arm == True) and track.arm == True):
-                    # Clear all other arms
-                    for ix in range(len(track_list)):
-                        if (ix != (self._get_mixer_first_track() + index)):
-                            if track_list[ix].can_be_armed == True:
-                                track_list[ix].arm = False
+                    if ((not other_buttons_held) and (self.song().exclusive_arm == True) and track.arm == True):
+                        # Clear all other arms
+                        for ix in range(len(track_list)):
+                            if (ix != (self._get_mixer_first_track() + index)):
+                                if track_list[ix].can_be_armed == True:
+                                    track_list[ix].arm = False
+                else:
+                    self._send_led_status(index, track.arm, 'ARM_RECORDING')
 
         return _on_arm_button_pressed
 
@@ -620,14 +771,137 @@ class RotoControl(ControlSurface):
     def _get_arm_state_listener(self, index):
         def _on_arm_state_changed():
             track_list = self._get_track_list()
-            if track_list[self._get_mixer_first_track() + index].arm:
-                data = bytearray([MIDI_CC_MSG, self._button_cc_list[index], 127])
-                self._send_midi(tuple(data))
-            else:
-                data = bytearray([MIDI_CC_MSG, self._button_cc_list[index], 0])
-                self._send_midi(tuple(data))
+            track = track_list[self._get_mixer_first_track() + index]
+            self._send_led_status(index, track.arm, 'ARM_RECORDING')
 
         return _on_arm_state_changed
+
+    def _get_param_val_listener(self, param, index):
+        def _on_param_val_changed():
+            # Throttle this listener to avoid a storm of updates on some third party plugins.
+            current_time = time()
+            self._latest_value_param[index] = param
+            if current_time > (self._value_change_time[index] + VALUE_UPDATE_PERIOD):
+                self._latest_value_param[index] = None
+                self._value_change_time[index] = current_time
+                self._schedule_value_timer(index)
+                self._send_value(index, param)
+        return _on_param_val_changed
+
+    def _add_value_listener(self, param, channel_index, button = 0, param_index = None):
+        if not self._is_live_v10():
+            # Knobs are index 0 - 7, buttons are 8 - 15
+            index = channel_index + (NUM_ENCODERS * button)
+
+            # For mixer mode the knob index is the param_index.
+            if index not in self._param_value_listener_list:
+                listener = self._get_param_val_listener(param, index)
+                self._param_value_listener_list[index] = (param, listener)
+                param.add_value_listener(listener)
+
+    def _get_touch_value_listener(self, index):
+        def _on_touch_pressed(value):
+            if value > 0:
+                encoder_index = index
+                button_index = index + NUM_ENCODERS
+
+                if encoder_index in self._param_value_listener_list:
+                    self._send_value(encoder_index, self._param_value_listener_list[encoder_index][0])
+
+                if button_index in self._param_value_listener_list:
+                    self._send_value(button_index, self._param_value_listener_list[button_index][0])
+
+        return _on_touch_pressed
+
+    def _default_volume_listener(self, value):
+        if value in self._param_value_listener_list:
+            param = self._param_value_listener_list[value][0]
+            if param:
+                param.value = param.default_value
+
+    def _ff_playhead_listener(self, value):
+        if value > 0:
+            self.song().jump_by(self.song().signature_numerator)
+
+    def _rw_playhead_listener(self, value):
+        if value > 0:
+            self.song().jump_by(-(self.song().signature_numerator))
+
+    def _clear_value_listeners(self):
+        # Remove all existing device listeners
+        if not self._is_live_v10():
+            for index in self._param_value_listener_list:
+                param = self._param_value_listener_list[index][0]
+                listener = self._param_value_listener_list[index][1]
+                if param:
+                    if param.value_has_listener(listener):
+                        param.remove_value_listener(listener)
+
+            self._param_value_listener_list = {}
+
+    def _clear_audio_meter_listeners(self):
+        # Remove all existing audio meter listeners
+        if not self._is_live_v10():
+            for index in self._audio_meter_listener_list:
+                track = self._audio_meter_listener_list[index][0]
+                listener = self._audio_meter_listener_list[index][1]
+                if track and track.has_audio_output:
+                    if (index % 2) == LEFT_CHANNEL:
+                        if track.output_meter_left_has_listener(listener):
+                            track.remove_output_meter_left_listener(listener)
+                    else:
+                        if track.output_meter_right_has_listener(listener):
+                            track.remove_output_meter_right_listener(listener)
+
+            self._audio_meter_listener_list = {}
+            self._meter_update_enabled = True
+            self._max_output_meter_values = [0] * (NUM_ENCODERS * 2)
+
+    def _add_audio_meter_listeners(self, track, track_index, index):
+        if not self._is_live_v10():
+            if track.has_audio_output:
+                left_listener = self._get_meter_changed_listener(track, track_index, LEFT_CHANNEL)
+                right_listener = self._get_meter_changed_listener(track, track_index, RIGHT_CHANNEL)
+                track.add_output_meter_left_listener(left_listener)
+                track.add_output_meter_right_listener(right_listener)
+
+                # Store the listeners for later cleanup
+                self._audio_meter_listener_list[index * 2] = (track, left_listener)
+                self._audio_meter_listener_list[(index * 2) + 1] = (track, right_listener)
+
+
+    def _get_meter_changed_listener(self, track, track_index, type):
+        def _on_meter_state_changed():
+            current_time = time()
+            if (self._active_mode == 'MIXER') and (self._mixer_mode == 'MODE_SELECTED'):
+                index = 0 + type
+            else:
+                index = ((track_index % NUM_ENCODERS) * 2) + type
+
+            # Take the maximum value between returned samples.
+            if type == LEFT_CHANNEL:
+                _value = int(track.output_meter_left * 127)
+            elif type == RIGHT_CHANNEL:
+                _value = int(track.output_meter_right * 127)
+
+            if self._max_output_meter_values[index] < _value:
+                self._max_output_meter_values[index] = _value
+
+            # Throttle this listener to control the rate of updates.
+            if current_time > (self._audio_meter_change_time[index] + AUDIO_METER_UPDATE_PERIOD):
+                self._audio_meter_change_time[index] = current_time
+                if type == LEFT_CHANNEL:
+                    output = self._max_output_meter_values[index]
+                elif type == RIGHT_CHANNEL:
+                    output = self._max_output_meter_values[index]
+
+                if self._meter_update_enabled:
+                    data = bytearray([MIDI_CC_MSG, METERS_FIRST_CC + index, output])
+                    self._send_midi(tuple(data))
+
+                self._max_output_meter_values[index] = 0
+
+        return _on_meter_state_changed
 
     def _toggle_session_record(self, value):
         if value > 0:
@@ -663,6 +937,9 @@ class RotoControl(ControlSurface):
                 self._send_selected_device_update(device_list, selected_device)
 
     def _send_selected_device_update(self, device_list, selected_device):
+        if not self._plugin_lock:
+            self._clear_value_listeners()
+
         # Update self._plugin_first_device if the user has selected a device outside of the current page
         if selected_device in device_list:
             self._selected_device_index = device_list.index(selected_device)
@@ -735,7 +1012,7 @@ class RotoControl(ControlSurface):
         mixer_updated = False
         self._update_selected_track()
         selected_track = self.song().view.selected_track
-        self._log_print('Track Change: {}'.format(self._selected_track_index))
+        self._log_print('Track Change: {}'.format(self._selected_track_index), LOG_VERBOSE)
 
         if self._track_selected_via_roto_control == False:
             # Update the selected track
@@ -855,12 +1132,9 @@ class RotoControl(ControlSurface):
             if parameter.is_quantized:
                 quantised_steps = min([len(parameter.value_items), MAX_QUANTISED_STEPS])
 
+                # Send zero filled strings - strings are obtained live.
                 if quantised_steps <= MAX_QUANTISED_STRING_STEPS:
-                    for item in parameter.value_items:
-                        modified_string = ''.join(chr(ord(ch) & 0x7F) for ch in item[:(MAX_STRING_LENGTH - 1)].ljust(MAX_STRING_LENGTH, '\x00'))
-                        quantised_strings = quantised_strings + modified_string
-
-                self._log_print(bytearray(quantised_strings, 'utf-8'), LOG_VERBOSE)
+                    quantised_strings = bytes(len(parameter.value_items) * MAX_STRING_LENGTH)
 
             # Truncate the parameter name if needed
             param_name = parameter.name[:(MAX_STRING_LENGTH - 1)].ljust(MAX_STRING_LENGTH, '\x00')
@@ -889,7 +1163,7 @@ class RotoControl(ControlSurface):
             data.append(param_value_msb)
             data.append(param_value_lsb)
             data.extend(param_name.encode('utf-8'))
-            data.extend(bytearray(quantised_strings, 'utf-8'))
+            data.extend(quantised_strings)
             self._send_sysex(PLUGIN_COMMAND_GROUP, LEARN_PARAM, data)
         else:
             self._log_print('No parameter selected')
@@ -934,6 +1208,22 @@ class RotoControl(ControlSurface):
             if (encoder != None) and (mapped_parameter != None) and (mapped_parameter in device_parameters):
                 if self._is_macro(mapped_parameter):
                     self._set_mapped_control_name(mapped_parameter, self._get_selected_device())
+
+    def _on_value_timer(self, index):
+        if self._latest_value_param[index] is not None:
+            self._send_value(index, self._latest_value_param[index])
+
+    def _send_value(self, index, param):
+        modified_string = ''.join(chr(ord(ch) & 0x7F) for ch in param.str_for_value(param.value)[:(MAX_STRING_LENGTH - 1)].ljust(MAX_STRING_LENGTH, '\x00'))
+        modified_string =  self._format_db_string(modified_string)
+        button = 0
+        if index >= NUM_ENCODERS:
+            button = 1
+            index -= NUM_ENCODERS
+        data = bytearray([button])
+        data.append(index)
+        data.extend(modified_string.encode('utf-8'))
+        self._send_sysex(GENERAL_COMMAND_GROUP, PARAM_VALUES, data)
 
     @subject_slot('tracks')
     def __on_tracks_changed_in_live(self):
@@ -1006,14 +1296,24 @@ class RotoControl(ControlSurface):
 
     def _on_track_detail_changed(self):
         update_tracks = False
+        update_mixer = False
         for ix, (track, track_name, color_index) in enumerate(self._last_detail_change_track_list):
             if track != None:
                 if (track.name != track_name) or (track.color_index != color_index):
                     update_tracks = True
                     self._last_detail_change_track_list[ix] = (track, track.name, track.color_index)
 
-        if update_tracks == True:
+                    # Check for MIDI track device change to force meter listener mapping
+                    if (track.name != track_name):
+                        num_devices = len(track.devices)
+                        if track.has_midi_input and ((num_devices == 1) or (num_devices == 0)):
+                            update_mixer = True
+
+        if update_tracks:
             self._return_tracks()
+
+        if update_mixer:
+            self._update_mixer()
 
     def _on_device_name_changed(self):
         self._update_devices()
@@ -1069,11 +1369,14 @@ class RotoControl(ControlSurface):
 
             if (command_id == ROTO_DAW_CONNECTED):
                 # Run any initialiser functions that need sysex here
-                self._schedule_timer()
+                self._schedule_group_track_timer()
                 self._RotoControl__on_selected_track_changed()
                 self._RotoControl__on_tracks_changed_in_live()
+                self._setup_meters()
 
             elif (command_id == SET_FIRST_TRACK):
+                self._meter_update_enabled = False
+
                 # Set the mixer first track index
                 track_list = self._get_track_list()
                 track_index = (data[0] << 7) | data[1]
@@ -1109,7 +1412,7 @@ class RotoControl(ControlSurface):
                         selected_track = track_list[self._selected_track_index]
                         self._track_selected_via_roto_control = True
                         self.song().view.selected_track = selected_track
-                        self._log_print('Select track {}'.format(track_index))
+                        self._log_print('Select track {}'.format(track_index), LOG_VERBOSE)
                         self._selected_track_mode = self._channel_mode
 
             elif (command_id == REQUEST_TRANSPORT_STATUS):
@@ -1138,6 +1441,9 @@ class RotoControl(ControlSurface):
                     re_enable_automation_status = 1
 
                 self._send_sysex(GENERAL_COMMAND_GROUP, TRANSPORT_STATUS, bytearray([play_status, 0, record_status, session_record_status, loop_status, punch_in_status, punch_out_status, re_enable_automation_status]))
+
+            elif (command_id == ROTO_PAGE_LEFT) or (command_id == ROTO_PAGE_RIGHT):
+                self._clear_value_listeners()
 
         elif (command_group == PLUGIN_COMMAND_GROUP):
             if (command_id == SET_PLUGIN_MODE):
@@ -1176,6 +1482,7 @@ class RotoControl(ControlSurface):
                 if (data[0] < len(device_list)):
                     # If the selected device has changed
                     if self._selected_device_index != self._plugin_first_device + data[0]:
+                        self._clear_value_listeners()
                         # Select the device - note this will cause __on_selected_device_changed
                         # to be called
                         self._selected_device_index = self._plugin_first_device + data[0]
@@ -1305,6 +1612,10 @@ class RotoControl(ControlSurface):
                             self._button_list[data[9]].release_parameter()
                             if param_mapped:
                                 self._button_list[data[9]].connect_to(param)
+
+                        if param_mapped:
+                            self._add_value_listener(param, data[9], data[8], param_index)
+
                     else:
                         param_valid = False
                 else:
@@ -1627,6 +1938,40 @@ class RotoControl(ControlSurface):
 
     def _rack_has_default_name(self, device_name):
         return device_name in MACRO_DEFAULT_NAMES
+
+    def _format_db_string(self, string): 
+        # Match values like "1.24 dB", "-6.224 dB", "0 dB".
+        match = re.match(r'^(-?\d+(?:\.\d+)?) dB$', string.rstrip('\x00'))
+        if not match: 
+            return string
+
+        number_str = match.group(1)
+
+        # Convert if more than one decimal place, otherwise leave unchanged.
+        if '.' in number_str and len(number_str.split('.')[1]) > 1: 
+            value = float(number_str)
+            return f"{value:.1f} dB"
+        else:
+            return string
+
+    def _send_meters_state(self):
+        # If any solo is enabled, then the meter state is determined by the solo state only. Otherwise
+        # the meter state is determined by the mute state.
+        meter_states = {}
+        if any(track.solo for track in self._get_track_list()):
+            if self._mixer_mode == 'MODE_ALL':
+                # Trim the solo list to the visible set of tracks
+                # self._get_mixer_first_track()
+                meter_states = dict(islice(self._solo_value_list.items(), self._get_mixer_first_track(), self._get_mixer_first_track() + NUM_ENCODERS))
+            elif self._mixer_mode == 'MODE_SELECTED':
+                meter_states[0] = self._solo_value_list[self._selected_track_index]
+        else:
+            meter_states = self._mute_value_list
+
+        data = bytearray()
+        data.extend(meter_states.values())
+        data += bytes(NUM_ENCODERS - len(data))
+        self._send_sysex(MIXER_COMMAND_GROUP, SET_MIX_VU_METER_STATES, data)
 
     # Check if we are in Live 10 to hande API differences
     def _is_live_v10(self):
